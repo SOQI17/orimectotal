@@ -1840,6 +1840,7 @@ function App() {
   const [allConsumos, setAllConsumos] = useState<ConsumptionRecord[]>([]);
   const [allClients, setAllClients] = useState<Client[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>('PELICULAS');
+  const [otherDropdownOpen, setOtherDropdownOpen] = useState(false);
 
   const activeCategoryConsumos = useMemo(() => {
     if (activeCategory === 'ALL') return allConsumos;
@@ -7053,12 +7054,14 @@ ${rows.map(r=>{
                   {([
                     ['PELICULAS', 'Películas'],
                     ['REPUESTOS', 'Repuestos'],
-                    ['SERVICIOS', 'Servicios'],
-                    ['ALL', 'Todas']
+                    ['SERVICIOS', 'Servicios']
                   ] as const).map(([val, label]) => (
                     <button
                       key={val}
-                      onClick={() => setActiveCategory(val)}
+                      onClick={() => {
+                        setActiveCategory(val);
+                        setOtherDropdownOpen(false);
+                      }}
                       className={cn(
                         "px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer",
                         activeCategory === val
@@ -7066,15 +7069,82 @@ ${rows.map(r=>{
                             ? "bg-[#ED1C24] text-white shadow-sm"
                             : val === 'REPUESTOS'
                               ? "bg-blue-600 text-white shadow-sm"
-                              : val === 'SERVICIOS'
-                                ? "bg-purple-600 text-white shadow-sm"
-                                : (darkMode ? "bg-white/12 text-white" : "bg-gray-800 text-white")
+                              : "bg-purple-600 text-white shadow-sm"
                           : (darkMode ? "text-gray-500 hover:text-gray-300" : "text-gray-400 hover:text-gray-600")
                       )}
                     >
                       {label}
                     </button>
                   ))}
+                  
+                  {/* Dropdown for other categories */}
+                  {(() => {
+                    const otherCategories = [
+                      { value: 'ACCESORIOS', label: 'Accesorios' },
+                      { value: 'ALIANZA', label: 'Alianza' },
+                      { value: 'CONTRASTES', label: 'Contrastes' },
+                      { value: 'EQUIPOS', label: 'Equipos' },
+                      { value: 'INTERESES', label: 'Intereses' },
+                      { value: 'MAMOTOME', label: 'Mamotome' },
+                      { value: 'MANTENIMIENTO', label: 'Mantenimiento' },
+                      { value: 'QUIMICOS', label: 'Químicos' },
+                      { value: 'ALL', label: 'Todas' }
+                    ];
+                    const isOtherActive = otherCategories.some(cat => cat.value === activeCategory);
+                    const activeLabel = otherCategories.find(cat => cat.value === activeCategory)?.label || 'Más';
+
+                    return (
+                      <div className="relative">
+                        <button
+                          onClick={() => setOtherDropdownOpen(o => !o)}
+                          className={cn(
+                            "px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer",
+                            isOtherActive
+                              ? activeCategory === 'ALL'
+                                ? (darkMode ? "bg-white/12 text-white" : "bg-gray-800 text-white shadow-sm")
+                                : (darkMode ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20" : "bg-cyan-50 text-cyan-700 border border-cyan-200 shadow-sm")
+                              : (darkMode ? "text-gray-500 hover:text-gray-300" : "text-gray-400 hover:text-gray-600")
+                          )}
+                        >
+                          <span>{activeLabel}</span>
+                          <ChevronDown className="w-3 h-3 text-gray-400" />
+                        </button>
+
+                        {otherDropdownOpen && (
+                          <>
+                            {/* Backdrop to close list */}
+                            <div className="fixed inset-0 z-30" onClick={() => setOtherDropdownOpen(false)} />
+                            
+                            {/* Category List */}
+                            <div className={cn(
+                              "absolute right-0 mt-1 w-44 rounded-xl border p-1 shadow-xl z-40 flex flex-col gap-0.5",
+                              darkMode 
+                                ? "bg-[#16161A] border-white/8 text-white" 
+                                : "bg-white border-gray-200 text-gray-800"
+                            )}>
+                              {otherCategories.map(cat => (
+                                <button
+                                  key={cat.value}
+                                  onClick={() => {
+                                    setActiveCategory(cat.value);
+                                    setOtherDropdownOpen(false);
+                                  }}
+                                  className={cn(
+                                    "w-full text-left px-3 py-1.5 rounded-lg text-[10px] font-bold transition-colors cursor-pointer",
+                                    activeCategory === cat.value
+                                      ? (darkMode ? "bg-cyan-500/10 text-cyan-400" : "bg-cyan-50 text-cyan-600")
+                                      : (darkMode ? "hover:bg-white/5 text-gray-300" : "hover:bg-gray-50 text-gray-600")
+                                  )}
+                                >
+                                  {cat.label}
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Month quick-picker */}
