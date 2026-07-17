@@ -14,6 +14,9 @@ export default defineConfig(({command, mode}) => {
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: ['icon.svg'],
+        workbox: {
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5MB
+        },
         manifest: {
           name: 'Fujifilm DI-HT Inventory',
           short_name: 'DI-HT',
