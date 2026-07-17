@@ -2112,7 +2112,7 @@ function App() {
         let updates = 0;
 
         // Get the highest existing consumption ID
-        let nextId = Math.max(0, ...allConsumos.map(r => r.id)) + 1;
+        let nextId = allConsumos.reduce((max, r) => r.id > max ? r.id : max, 0) + 1;
 
         newConsumos.forEach(item => {
           const client = allClients.find(c => c.name.toUpperCase() === item.clientName.toUpperCase());
@@ -3467,8 +3467,8 @@ function App() {
     if (!totalOps) { setCsvImportStatus('done'); return; }
 
     try {
-      let nextRecordId = Math.max(0, ...allConsumos.map(r => r.id)) + 1;
-      let nextClientId = Math.max(0, ...allClients.map(c => c.id)) + 1;
+      let nextRecordId = allConsumos.reduce((max, r) => r.id > max ? r.id : max, 0) + 1;
+      let nextClientId = allClients.reduce((max, c) => c.id > max ? c.id : max, 0) + 1;
       let processed = 0;
 
       // In DIHL-only mode: replace DIHT records + insert new ones, all as DIHL
@@ -4261,7 +4261,7 @@ ${rows.map(r=>{
       if (clientToSave.id) {
         finalClient = clientToSave as Client;
       } else {
-        const nextId = Math.max(0, ...allClients.map(c => c.id)) + 1;
+        const nextId = allClients.reduce((max, c) => c.id > max ? c.id : max, 0) + 1;
         finalClient = {
           ...clientToSave,
           id: nextId
@@ -4480,7 +4480,7 @@ ${rows.map(r=>{
       if (editingRecord.id) {
         finalRecord = editingRecord as ConsumptionRecord;
       } else {
-        const nextId = Math.max(0, ...allConsumos.map(r => r.id)) + 1;
+        const nextId = allConsumos.reduce((max, r) => r.id > max ? r.id : max, 0) + 1;
         finalRecord = { ...editingRecord, id: nextId } as ConsumptionRecord;
       }
 
