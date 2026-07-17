@@ -2855,56 +2855,97 @@ function App() {
     return s;
   };
 
+  const normHeader = (s: string): string => {
+    return (s || '')
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '')
+      .trim();
+  };
+
+  const normCode = (s: any): string => {
+    return (s === null || s === undefined) ? '' : String(s).trim().replace(/[^a-zA-Z0-9]/g, '').replace(/^0+/, '').toUpperCase();
+  };
+
+  const normRuc = (s: any): string => {
+    return (s === null || s === undefined) ? '' : String(s).trim().replace(/[^0-9]/g, '');
+  };
+
+  const cleanClientNameForMatching = (name: string): string => {
+    if (!name) return '';
+    return name
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toUpperCase()
+      .replace(/\b(S\.?A\.?S?|C\.?A\.?|LTDA\.?|LIMITADA|S\.?R\.?L\.?|INC\.?)\b/g, '')
+      .replace(/[^A-Z0-9]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
   const findClientForRow = (row: any): Client | null => {
     const rowKeys = Object.keys(row);
-    const clientNameCols = ['cliente', 'client', 'nombre cliente', 'nombre_cliente', 'razón social', 'razon social', 'name', 'nombre'];
-    const rucCols = ['ruc', 'ruc/id', 'ruc_id', 'cedula', 'identificacion'];
-    // COD CLIENTE is the primary deduplication key — match exact column names first
-    const codeCols = ['cod cliente', 'codigo2', 'codigo cliente', 'código cliente', 'codcliente', 'client_code', 'client code', 'cod', 'codigo', 'código'];
+    const clientNameCols = ['cliente', 'client', 'nombrecliente', 'razonsocial', 'name', 'nombre'];
+    const rucCols = ['ruc', 'rucid', 'cedula', 'identificacion'];
+    const codeCols = ['codcliente', 'codigo2', 'codigocliente', 'clientcode', 'cod', 'codigo'];
 
     let clientNameVal = '';
     let rucVal = '';
     let codeVal = '';
 
     rowKeys.forEach(k => {
-      const kn = norm(k);
-      // Prioritize exact matches for code columns (avoid false positives from "codigo" matching "codigo2")
+      const kh = normHeader(k);
       if (!codeVal) {
-        // Try exact match first
-        if (codeCols.some(c => kn === norm(c))) codeVal = norm(row[k]);
-        // Then partial match if still empty
-        else if (codeCols.some(c => kn.includes(norm(c)))) codeVal = norm(row[k]);
+        if (codeCols.some(c => kh === normHeader(c))) codeVal = String(row[k]);
+        else if (codeCols.some(c => kh.includes(normHeader(c)))) codeVal = String(row[k]);
       }
-      if (!rucVal && rucCols.some(c => kn === norm(c))) rucVal = norm(row[k]);
-      if (!clientNameVal && clientNameCols.some(c => kn === norm(c) || kn.includes(norm(c)))) clientNameVal = norm(row[k]);
+      if (!rucVal && rucCols.some(c => kh === normHeader(c))) rucVal = String(row[k]);
+      if (!clientNameVal && clientNameCols.some(c => kh === normHeader(c) || kh.includes(normHeader(c)))) clientNameVal = String(row[k]);
     });
 
-    // 1. Exact match by COD CLIENTE (highest priority — unique identifier)
+    // 1. Exact match by COD CLIENTE (highest priority)
     if (codeVal) {
-      const found = allClients.find(c =>
-        norm(c.client_code) === codeVal ||
-        (c.alt_codes || []).some(ac => norm(ac) === codeVal)
-      );
-      if (found) return found;
+      const targetCode = normCode(codeVal);
+      if (targetCode) {
+        const found = allClients.find(c =>
+          normCode(c.client_code) === targetCode ||
+          (c.alt_codes || []).some(ac => normCode(ac) === targetCode)
+        );
+        if (found) return found;
+      }
     }
     // 2. Exact match by RUC
     if (rucVal) {
-      const found = allClients.find(c => norm(c.ruc_id) === rucVal);
-      if (found) return found;
+      const targetRuc = normRuc(rucVal);
+      if (targetRuc) {
+        const found = allClients.find(c => normRuc(c.ruc_id) === targetRuc);
+        if (found) return found;
+      }
     }
-    // 3. Exact name match
+    // 3. Clean name match
     if (clientNameVal) {
-      const found = allClients.find(c => norm(c.name) === clientNameVal || norm(altNames[c.id] || '') === clientNameVal);
-      if (found) return found;
+      const cleanedVal = cleanClientNameForMatching(clientNameVal);
+      if (cleanedVal) {
+        const found = allClients.find(c =>
+          cleanClientNameForMatching(c.name) === cleanedVal ||
+          cleanClientNameForMatching(altNames[c.id] || '') === cleanedVal
+        );
+        if (found) return found;
+      }
     }
     // 4. Partial name match
     if (clientNameVal) {
-      const found = allClients.find(c =>
-        norm(c.name).includes(clientNameVal) ||
-        clientNameVal.includes(norm(c.name)) ||
-        (altNames[c.id] && (norm(altNames[c.id]).includes(clientNameVal) || clientNameVal.includes(norm(altNames[c.id]))))
-      );
-      if (found) return found;
+      const cleanedVal = cleanClientNameForMatching(clientNameVal);
+      if (cleanedVal) {
+        const found = allClients.find(c => {
+          const dbCleaned = cleanClientNameForMatching(c.name);
+          const altCleaned = cleanClientNameForMatching(altNames[c.id] || '');
+          return (dbCleaned && (dbCleaned.includes(cleanedVal) || cleanedVal.includes(dbCleaned))) ||
+            (altCleaned && (altCleaned.includes(cleanedVal) || cleanedVal.includes(altCleaned)));
+        });
+        if (found) return found;
+      }
     }
     return null;
   };
@@ -3196,7 +3237,6 @@ function App() {
       const matched: { row: any; clientName: string }[] = [];
       const toCreate: { row: any; clientName: string; province: string; clientCode: string; salesperson: string }[] = [];
       const duplicates: any[] = [];
-
       // Track codes already resolved to EXISTING clients (so same code doesn't appear as new client)
       const resolvedCodes = new Map<string, string>(); // normCode → clientName (existing)
       // Track new clients being created in this CSV
@@ -3205,11 +3245,11 @@ function App() {
 
       rows.forEach(row => {
         const info = extractClientInfoFromRow(row);
-        const normCode = norm(info.clientCode);
+        const codeValNorm = normCode(info.clientCode);
 
         // If this code was already resolved to an existing client, use that client directly
-        if (normCode && resolvedCodes.has(normCode)) {
-          const clientName = resolvedCodes.get(normCode)!;
+        if (codeValNorm && resolvedCodes.has(codeValNorm)) {
+          const clientName = resolvedCodes.get(codeValNorm)!;
           const client = allClients.find(c => c.name === clientName)!;
           const tempRecord = mapRowToRecord(row, client.id, 0);
           const isDup = isExistingRecord(tempRecord, client.id);
@@ -3251,16 +3291,16 @@ function App() {
 
         const client = findClientForRow(row);
         if (!client) {
-          const normName = norm(info.name);
+          const normName = cleanClientNameForMatching(info.name);
           if (!normName || normName === 'SIN NOMBRE') return;
 
           let canonical: string | undefined;
-          if (normCode) canonical = newClientByCode.get(normCode);
+          if (codeValNorm) canonical = newClientByCode.get(codeValNorm);
           if (!canonical) canonical = newClientByName.get(normName);
 
           if (!canonical) {
             canonical = info.name;
-            if (normCode) newClientByCode.set(normCode, canonical);
+            if (codeValNorm) newClientByCode.set(codeValNorm, canonical);
             newClientByName.set(normName, canonical);
           }
 
@@ -3269,7 +3309,8 @@ function App() {
         }
 
         // Existing client found — register their code so subsequent rows with same code find them
-        if (normCode) resolvedCodes.set(normCode, client.name);
+        const existingClientCodeNorm = normCode(client.client_code) || codeValNorm;
+        if (existingClientCodeNorm) resolvedCodes.set(existingClientCodeNorm, client.name);
 
         const tempRecord2 = mapRowToRecord(row, client.id, 0);
         const isDup2 = isExistingRecord(tempRecord2, client.id);
@@ -4114,6 +4155,12 @@ ${rows.map(r=>{
 
   const filteredClients = useMemo(() => {
     return allClients.filter(c => {
+      // Filter by active category: client must have transactions in the selected category
+      if (activeCategory !== 'ALL') {
+        const hasPurchases = activeCategoryConsumos.some(r => r.client_id === c.id);
+        if (!hasPurchases) return false;
+      }
+
       const searchLower = searchTerm.toLowerCase();
       const nameMatch = String(c.name).toLowerCase().includes(searchLower);
       const rucMatch = String(c.ruc_id).includes(searchTerm);
@@ -4135,7 +4182,7 @@ ${rows.map(r=>{
       
       return nameMatch || rucMatch || altNameMatch || provinceMatch || clientCodeMatch || salespersonMatch || hasInvoiceMatch || hasPrinterSerialMatch;
     });
-  }, [searchTerm, altNames, allClients, activeCategoryConsumos]);
+  }, [searchTerm, altNames, allClients, activeCategory, activeCategoryConsumos]);
 
   // Consumo específico del cliente seleccionado
   const currentConsumption = useMemo(() => {
