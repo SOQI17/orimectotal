@@ -16,7 +16,7 @@ import { format, isAfter } from 'date-fns';
 import * as XLSX from 'xlsx';
 import { cn } from './lib/utils';
 import { db } from './firebase';
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 import { 
   collection, 
   onSnapshot, 
@@ -376,7 +376,6 @@ interface AuthContextType {
   role: UserRole | null;
   authLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
 }
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -397,36 +396,9 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
             const data = snap.data() as AppUser;
             if (data.activo) { setAppUser(data); }
             else { await signOut(_auth); setAppUser(null); }
-          } else {
-            // Auto register user if they exist in Auth but not in Firestore 'users' collection
-            const newUserData = {
-              uid: firebaseUser.uid,
-              email: firebaseUser.email || '',
-              nombre: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Usuario Google',
-              role: 'vendedor' as UserRole,
-              activo: true,
-              perms: {
-                dashboard: true,
-                clients: true,
-                clients_edit: false,
-                inventory: false,
-                inventory_edit: false,
-                imager: false,
-                intelligence: false,
-                export: false,
-                audit: false
-              }
-            };
-            await setDoc(doc(db, 'users', firebaseUser.uid), newUserData);
-            setAppUser(newUserData);
-          }
-        } catch (error) {
-          console.error("Auth listener error:", error);
-          setAppUser(null);
-        }
-      } else {
-        setAppUser(null);
-      }
+          } else { await signOut(_auth); setAppUser(null); }
+        } catch { setAppUser(null); }
+      } else { setAppUser(null); }
       setAuthLoading(false);
     });
     return unsub;
@@ -435,26 +407,19 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (email: string, password: string) => {
     await signInWithEmailAndPassword(_auth, email, password);
   };
-
-  const loginWithGoogle = async () => {
-    const provider = new GoogleAuthProvider();
-    await signInWithPopup(_auth, provider);
-  };
-
   const logout = async () => { await signOut(_auth); };
 
-  return <AuthContext.Provider value={{ appUser, role: appUser?.role ?? null, authLoading, login, loginWithGoogle, logout }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ appUser, role: appUser?.role ?? null, authLoading, login, logout }}>{children}</AuthContext.Provider>;
 }
 
 // ── LOGIN PAGE ───────────────────────────────────────────────────────────────
 function LoginPage({ darkMode }: { darkMode: boolean }) {
-  const { login, loginWithGoogle } = useAuth();
+  const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
   const [forgotMode, setForgotMode] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetSent, setResetSent] = useState(false);
@@ -471,23 +436,6 @@ function LoginPage({ darkMode }: { darkMode: boolean }) {
       else if (code === 'auth/too-many-requests') setError('Demasiados intentos. Intenta más tarde.');
       else setError('Error al iniciar sesión.');
     } finally { setLoading(false); }
-  };
-
-  const handleGoogleSignIn = async () => {
-    setError('');
-    setGoogleLoading(true);
-    try {
-      await loginWithGoogle();
-    } catch (err: any) {
-      console.error("Google login error:", err);
-      if (err?.code === 'auth/popup-closed-by-user') {
-        setError('El inicio de sesión fue cancelado.');
-      } else {
-        setError('Error al iniciar sesión con Google.');
-      }
-    } finally {
-      setGoogleLoading(false);
-    }
   };
 
   const handleResetPassword = async () => {
@@ -575,58 +523,29 @@ function LoginPage({ darkMode }: { darkMode: boolean }) {
         <div className="flex flex-col gap-3">
           <div>
             <label className={cn("text-[10px] font-semibold uppercase tracking-wider mb-1.5 block", darkMode ? "text-gray-500" : "text-gray-500")}>Correo electrónico</label>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSubmit()} placeholder="usuario@orimec.com" autoComplete="email" disabled={loading || googleLoading}
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSubmit()} placeholder="usuario@orimec.com" autoComplete="email"
               className={cn("w-full px-3.5 py-2.5 rounded-xl text-xs font-medium outline-none transition-all", darkMode ? "bg-white/5 text-white placeholder:text-gray-600 focus:ring-1 focus:ring-[#ED1C24]/40 border border-white/8" : "bg-gray-100 text-gray-800 placeholder:text-gray-400 focus:bg-white focus:ring-2 focus:ring-[#ED1C24]/20 border border-transparent")} />
           </div>
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className={cn("text-[10px] font-semibold uppercase tracking-wider", darkMode ? "text-gray-500" : "text-gray-500")}>Contraseña</label>
-              <button type="button" onClick={() => { setForgotMode(true); setResetEmail(email); }} disabled={loading || googleLoading}
-                className={cn("text-[10px] font-semibold transition-colors hover:underline disabled:opacity-50", darkMode ? "text-gray-600 hover:text-gray-400" : "text-gray-400 hover:text-[#ED1C24]")}>
+              <button type="button" onClick={() => { setForgotMode(true); setResetEmail(email); }}
+                className={cn("text-[10px] font-semibold transition-colors hover:underline", darkMode ? "text-gray-600 hover:text-gray-400" : "text-gray-400 hover:text-[#ED1C24]")}>
                 ¿Olvidaste tu contraseña?
               </button>
             </div>
             <div className="relative">
-              <input type={showPass ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSubmit()} placeholder="••••••••" autoComplete="current-password" disabled={loading || googleLoading}
+              <input type={showPass ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSubmit()} placeholder="••••••••" autoComplete="current-password"
                 className={cn("w-full pl-3.5 pr-10 py-2.5 rounded-xl text-xs font-medium outline-none transition-all", darkMode ? "bg-white/5 text-white placeholder:text-gray-600 focus:ring-1 focus:ring-[#ED1C24]/40 border border-white/8" : "bg-gray-100 text-gray-800 placeholder:text-gray-400 focus:bg-white focus:ring-2 focus:ring-[#ED1C24]/20 border border-transparent")} />
-              <button type="button" onClick={() => setShowPass(v => !v)} disabled={loading || googleLoading} className={cn("absolute right-3 top-1/2 -translate-y-1/2", darkMode ? "text-gray-600 hover:text-gray-400" : "text-gray-400 hover:text-gray-600")}>
+              <button type="button" onClick={() => setShowPass(v => !v)} className={cn("absolute right-3 top-1/2 -translate-y-1/2", darkMode ? "text-gray-600 hover:text-gray-400" : "text-gray-400 hover:text-gray-600")}>
                 {showPass ? <Eye className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5 opacity-50" />}
               </button>
             </div>
           </div>
           {error && <p className="text-[11px] text-red-500 font-medium text-center">{error}</p>}
-          <button onClick={handleSubmit} disabled={loading || googleLoading || !email || !password}
+          <button onClick={handleSubmit} disabled={loading || !email || !password}
             className="mt-2 w-full bg-[#ED1C24] text-white py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-[#D11920] shadow-md shadow-red-500/20 transition-all disabled:opacity-50">
             {loading ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Ingresando...</> : <><LogOut className="w-3.5 h-3.5 rotate-180" />Iniciar sesión</>}
-          </button>
-
-          <div className="relative flex py-1 items-center">
-            <div className={cn("flex-grow border-t", darkMode ? "border-white/5" : "border-gray-200")} />
-            <span className={cn("flex-shrink mx-3 text-[9px] uppercase font-bold tracking-wider", darkMode ? "text-gray-600" : "text-gray-400")}>
-              o
-            </span>
-            <div className={cn("flex-grow border-t", darkMode ? "border-white/5" : "border-gray-200")} />
-          </div>
-
-          <button onClick={handleGoogleSignIn} disabled={loading || googleLoading}
-            className={cn(
-              "w-full py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 border transition-all disabled:opacity-50",
-              darkMode
-                ? "bg-white/5 border-white/8 hover:bg-white/8 text-white"
-                : "bg-white border-gray-200 hover:bg-gray-50 text-gray-700 shadow-sm"
-            )}
-          >
-            {googleLoading ? (
-              <span className={cn("w-3.5 h-3.5 border-2 border-t-transparent rounded-full animate-spin", darkMode ? "border-white" : "border-gray-700")} />
-            ) : (
-              <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
-                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05" />
-                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335" />
-              </svg>
-            )}
-            <span>Acceder con Google</span>
           </button>
         </div>
         <p className={cn("text-[9px] text-center mt-6 font-medium", darkMode ? "text-gray-700" : "text-gray-400")}>Acceso restringido a usuarios autorizados</p>
@@ -1031,6 +950,7 @@ interface ConsumptionRecord {
   nc_invoice_ref?: string;               // factura original que anula
   nc_new_invoice?: string;               // nueva factura (para anulación+refacturación)
   nc_reason?: string;                    // motivo
+  categoria?: string;                    // linea o categoria del producto
 }
 
 // ── PURCHASES DASHBOARD COMPONENT ──────────────────────────────────────────
@@ -1919,6 +1839,13 @@ function App() {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [allConsumos, setAllConsumos] = useState<ConsumptionRecord[]>([]);
   const [allClients, setAllClients] = useState<Client[]>([]);
+  const [activeCategory, setActiveCategory] = useState<string>('ALL');
+
+  const activeCategoryConsumos = useMemo(() => {
+    if (activeCategory === 'ALL') return allConsumos;
+    return allConsumos.filter(r => r.categoria === activeCategory);
+  }, [allConsumos, activeCategory]);
+
   const [altNames, setAltNames] = useState<Record<number, string>>({});
   const [view, setView] = useState<'clients' | 'dashboard' | 'inventory' | 'intelligence' | 'imager' | 'usuarios'>('dashboard');
   const [loading, setLoading] = useState(true);
@@ -3145,6 +3072,26 @@ function App() {
       else if (art.includes('TXE') || art.includes('TXM') || art.includes('TRIMAX')) filmType = 'TXE';
     }
 
+    const cleanCategoryName = (cat: string): string => {
+      if (!cat) return 'PELICULAS';
+      const normVal = cat.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+      if (normVal.includes('PELICULA')) return 'PELICULAS';
+      if (normVal.includes('ACCESORIO')) return 'ACCESORIOS';
+      if (normVal.includes('ALIANZA')) return 'ALIANZA';
+      if (normVal.includes('CONTRASTE')) return 'CONTRASTES';
+      if (normVal.includes('EQUIPO')) return 'EQUIPOS';
+      if (normVal.includes('INTERES')) return 'INTERESES';
+      if (normVal.includes('MAMOTOME')) return 'MAMOTOME';
+      if (normVal.includes('MANTENIMIENTO')) return 'MANTENIMIENTO';
+      if (normVal.includes('QUIMICO')) return 'QUIMICOS';
+      if (normVal.includes('REPUESTO')) return 'REPUESTOS';
+      if (normVal.includes('SERVICIO')) return 'SERVICIOS';
+      return normVal || 'PELICULAS';
+    };
+
+    const categoriaRaw = get(['categoria', 'category', 'linea', 'línea', 'tipo', 'segmento']);
+    const categoria = cleanCategoryName(categoriaRaw);
+
     return {
       id: nextId,
       client_id: clientId,
@@ -3158,6 +3105,7 @@ function App() {
       sale_price: finalSalePrice ?? null,
       film_type: filmType || 'DIHT',
       is_return: isReturn || false,
+      categoria: categoria,
     };
   };
 
@@ -3240,19 +3188,8 @@ function App() {
       const allRows = parseCSV(clean);
       if (!allRows.length) { setCsvImportError('El archivo no tiene filas válidas o el separador no fue reconocido. Columnas detectadas: ' + (Object.keys(allRows[0] ?? {}).join(', ') || 'ninguna')); setCsvImportStatus('error'); return; }
 
-      // ── Filtrar solo filas de PELICULAS si existe la columna CATEGORIA ──────
-      const hasCategoriaCol = allRows.length > 0 && Object.keys(allRows[0]).some(k => k.trim().toUpperCase() === 'CATEGORIA');
-      const rows = hasCategoriaCol
-        ? allRows.filter(row => {
-            const cat = Object.entries(row).find(([k]) => k.trim().toUpperCase() === 'CATEGORIA')?.[1] || '';
-            return String(cat).trim().toUpperCase() === 'PELICULAS';
-          })
-        : allRows;
-      if (hasCategoriaCol && rows.length === 0) {
-        setCsvImportError(`El archivo tiene la columna CATEGORIA pero ninguna fila contiene "PELICULAS". Categorías encontradas: ${[...new Set(allRows.map(r => Object.entries(r).find(([k]) => k.trim().toUpperCase() === 'CATEGORIA')?.[1] || '').filter(Boolean))].join(', ')}`);
-        setCsvImportStatus('error');
-        return;
-      }
+      // ── No filtrar por película, importar todas las categorías ──────
+      const rows = allRows;
       setCsvPreviewRows(rows.slice(0, 5));
 
       const matched: { row: any; clientName: string }[] = [];
@@ -4185,7 +4122,7 @@ ${rows.map(r=>{
       const clientCodeMatch = String(c.client_code || '').toLowerCase().includes(searchLower);
       const salespersonMatch = String(c.salesperson || '').toLowerCase().includes(searchLower);
       
-      const hasInvoiceMatch = allConsumos.some(r => 
+      const hasInvoiceMatch = activeCategoryConsumos.some(r => 
         r.client_id === c.id && 
         r.invoice_number && 
         String(r.invoice_number).toLowerCase().includes(searchLower)
@@ -4197,14 +4134,14 @@ ${rows.map(r=>{
       
       return nameMatch || rucMatch || altNameMatch || provinceMatch || clientCodeMatch || salespersonMatch || hasInvoiceMatch || hasPrinterSerialMatch;
     });
-  }, [searchTerm, altNames, allClients, allConsumos]);
+  }, [searchTerm, altNames, allClients, activeCategoryConsumos]);
 
   // Consumo específico del cliente seleccionado
   const currentConsumption = useMemo(() => {
     if (!selectedClient) return [];
-    return allConsumos.filter(r => r.client_id === selectedClient.id)
+    return activeCategoryConsumos.filter(r => r.client_id === selectedClient.id)
       .sort((a, b) => new Date(b.order_date).getTime() - new Date(a.order_date).getTime());
-  }, [selectedClient, allConsumos]);
+  }, [selectedClient, activeCategoryConsumos]);
 
   // Consumo filtrado por medida y factura (para métricas, tendencia y tabla)
   const filteredClientConsumption = useMemo(() => {
@@ -4624,7 +4561,7 @@ ${rows.map(r=>{
 
   // Métricas Globales para el Dashboard
   const globalMetrics = useMemo(() => {
-    let filteredConsumos = allConsumos;
+    let filteredConsumos = activeCategoryConsumos;
     
     if (dashboardStartDate) {
       filteredConsumos = filteredConsumos.filter(r => new Date(r.order_date) >= new Date(dashboardStartDate));
@@ -4781,7 +4718,7 @@ ${rows.map(r=>{
       topSizeByM2,
       salespersonData
     };
-  }, [allConsumos, allClients, dashboardStartDate, dashboardEndDate, globalFilmFilter, TRIMAX_2024]);
+  }, [activeCategoryConsumos, allClients, dashboardStartDate, dashboardEndDate, globalFilmFilter, TRIMAX_2024]);
 
   // ── DAY BRIEF — datos del banner de bienvenida ────────────────────────────
   const dayBrief = useMemo(() => {
@@ -4789,7 +4726,7 @@ ${rows.map(r=>{
     const todayStr = format(today, 'yyyy-MM-dd');
 
     // Facturas y m² de hoy
-    const todayConsumos = allConsumos.filter(r => r.order_date?.startsWith(todayStr) && !r.is_return);
+    const todayConsumos = activeCategoryConsumos.filter(r => r.order_date?.startsWith(todayStr) && !r.is_return);
     const todayM2 = parseFloat(todayConsumos.reduce((s, r) => s + getTotalM2(r.quantity, r.size, r.film_type), 0).toFixed(1));
     const todayFacturas = new Set(todayConsumos.map(r => r.invoice_number).filter(Boolean)).size;
     const todayClientes = new Set(todayConsumos.map(r => r.client_id)).size;
@@ -4797,7 +4734,7 @@ ${rows.map(r=>{
     // Clientes en riesgo (sin compra últimos 60 días)
     const cutoff60 = new Date(today); cutoff60.setDate(cutoff60.getDate() - 60);
     const clientesEnRiesgo = allClients.filter(c => {
-      const consumos = allConsumos.filter(r => r.client_id === c.id && !r.is_return);
+      const consumos = activeCategoryConsumos.filter(r => r.client_id === c.id && !r.is_return);
       if (!consumos.length) return false;
       const last = new Date(consumos.slice().sort((a,b) => new Date(b.order_date).getTime() - new Date(a.order_date).getTime())[0].order_date);
       return last < cutoff60;
@@ -4810,7 +4747,7 @@ ${rows.map(r=>{
     ];
     let stockBajo = 0;
     FUJI_SIZES.forEach(({ft, size}) => {
-      const consumosFt = allConsumos.filter(r => {
+      const consumosFt = activeCategoryConsumos.filter(r => {
         const rft = (!r.film_type || r.film_type === 'DIHT') ? 'DIHT' : r.film_type === 'DIHL' ? 'DIHL' : null;
         return rft === ft && r.size === size && !r.is_return;
       });
@@ -4827,7 +4764,7 @@ ${rows.map(r=>{
       let running = yd.openingBoxes || 0;
       STOCK_FILM_MONTHS.forEach((month, mi) => {
         if (mi > cm) return;
-        running = running + (yd.months?.[month]?.inBoxes || 0) - allConsumos.reduce((s, r) => {
+        running = running + (yd.months?.[month]?.inBoxes || 0) - activeCategoryConsumos.reduce((s, r) => {
           const rd = new Date(r.order_date);
           const rft2 = (!r.film_type || r.film_type === 'DIHT') ? 'DIHT' : r.film_type === 'DIHL' ? 'DIHL' : null;
           if (rd.getFullYear() !== cy || rd.getMonth() !== mi || r.size !== size || rft2 !== ft) return s;
@@ -4843,7 +4780,7 @@ ${rows.map(r=>{
     const greeting = hour < 12 ? 'Buenos días' : hour < 18 ? 'Buenas tardes' : 'Buenas noches';
 
     return { todayM2, todayFacturas, todayClientes, clientesEnRiesgo, stockBajo, greeting, todayStr };
-  }, [allConsumos, allClients, stockFilmData]);
+  }, [activeCategoryConsumos, allClients, stockFilmData]);
 
   // ── FILTERED CONSUMOS for Inventory & Intelligence (by globalFilmFilter) ──
   const filteredConsumosForView = useMemo(() => {
@@ -7104,6 +7041,26 @@ ${rows.map(r=>{
                 )}
               </div>
               <div className="flex items-center gap-2">
+                {/* Category selector */}
+                <div className="relative">
+                  <select
+                    value={activeCategory}
+                    onChange={(e) => setActiveCategory(e.target.value)}
+                    className={cn(
+                      "appearance-none pr-8 pl-3 py-1.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer outline-none",
+                      darkMode
+                        ? "bg-[#16161A] border-white/10 text-gray-300 focus:border-[#ED1C24]/30"
+                        : "bg-white border-gray-200 text-gray-600 shadow-sm focus:border-[#ED1C24]/30"
+                    )}
+                  >
+                    <option value="ALL" className={darkMode ? "bg-[#16161A] text-white" : "bg-white text-gray-800"}>Categoría: Todas</option>
+                    <option value="PELICULAS" className={darkMode ? "bg-[#16161A] text-white" : "bg-white text-gray-800"}>Películas</option>
+                    <option value="REPUESTOS" className={darkMode ? "bg-[#16161A] text-white" : "bg-white text-gray-800"}>Repuestos</option>
+                    <option value="SERVICIOS" className={darkMode ? "bg-[#16161A] text-white" : "bg-white text-gray-800"}>Servicios</option>
+                  </select>
+                  <ChevronDown className="w-3 h-3 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400" />
+                </div>
+
                 {/* Month quick-picker */}
                 <div className="relative">
                   <button
@@ -7404,9 +7361,9 @@ ${rows.map(r=>{
                 <div className="h-72 min-w-0">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={(() => {
-                      const filtered = globalFilmFilter === 'all' ? allConsumos
-                        : globalFilmFilter === 'DIHT' ? allConsumos.filter(r => !r.film_type || r.film_type === 'DIHT')
-                        : allConsumos.filter(r => r.film_type === globalFilmFilter);
+                      const filtered = globalFilmFilter === 'all' ? activeCategoryConsumos
+                        : globalFilmFilter === 'DIHT' ? activeCategoryConsumos.filter(r => !r.film_type || r.film_type === 'DIHT')
+                        : activeCategoryConsumos.filter(r => r.film_type === globalFilmFilter);
                       const dated = filtered.filter(r => {
                         const d = new Date(r.order_date);
                         if (dashboardStartDate && d < new Date(dashboardStartDate)) return false;
@@ -8050,7 +8007,7 @@ ${rows.map(r=>{
               <PurchasesDashboardView
                 darkMode={darkMode}
                 globalMetrics={globalMetrics}
-                allConsumos={allConsumos}
+                allConsumos={activeCategoryConsumos}
               />
             )}
           </div>
@@ -16555,7 +16512,7 @@ ${sectionsHtml}
         <GlobalSearch
           darkMode={darkMode}
           allClients={allClients}
-          allConsumos={allConsumos}
+          allConsumos={activeCategoryConsumos}
           altNames={altNames}
           onSelectClient={(client) => { setSelectedClient(client); }}
           onNavigate={(v) => setView(v as any)}
