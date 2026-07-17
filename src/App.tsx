@@ -1839,7 +1839,7 @@ function App() {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [allConsumos, setAllConsumos] = useState<ConsumptionRecord[]>([]);
   const [allClients, setAllClients] = useState<Client[]>([]);
-  const [activeCategory, setActiveCategory] = useState<string>('ALL');
+  const [activeCategory, setActiveCategory] = useState<string>('PELICULAS');
 
   const activeCategoryConsumos = useMemo(() => {
     if (activeCategory === 'ALL') return allConsumos;
@@ -4661,15 +4661,14 @@ ${rows.map(r=>{
       salespersonDist[salesperson].revenue += qty * spPrice;
     });
 
-    const allClientsSorted = Object.entries(clientDistM2)
-      .map(([id, m2]) => {
+    const baseClientsMap = (activeCategory === 'PELICULAS' || activeCategory === 'ALL') ? clientDistM2 : clientDist;
+    const allClientsSorted = Object.entries(baseClientsMap)
+      .map(([id, val]) => {
         const cId = parseInt(id);
         const c = allClients.find(c => c.id === cId);
-        // Use allConsumos with date filter only (not film filter) for revenue
-        const revenueConsumos = allConsumos.filter(r => {
+        // Use filteredConsumos for category-specific revenue
+        const revenueConsumos = filteredConsumos.filter(r => {
           if (r.client_id !== cId || r.is_return) return false;
-          if (dashboardStartDate && new Date(r.order_date) < new Date(dashboardStartDate)) return false;
-          if (dashboardEndDate && new Date(r.order_date) > new Date(dashboardEndDate)) return false;
           return true;
         });
         const revenue = revenueConsumos.reduce((s, r) => {
@@ -4682,11 +4681,11 @@ ${rows.map(r=>{
           province: c?.province || '—',
           salesperson: c?.salesperson || '—',
           value: clientDist[cId] || 0,
-          m2,
+          m2: (activeCategory === 'PELICULAS' || activeCategory === 'ALL') ? (clientDistM2[cId] || 0) : 0,
           revenue: parseFloat(revenue.toFixed(2))
         };
       })
-      .sort((a, b) => b.m2 - a.m2);
+      .sort((a, b) => (activeCategory === 'PELICULAS' || activeCategory === 'ALL') ? b.m2 - a.m2 : b.revenue - a.revenue);
     const topClients = allClientsSorted.slice(0, 5);
 
     const sizeData = Object.entries(sizeDistM2)
@@ -4703,7 +4702,7 @@ ${rows.map(r=>{
         m2: stats.m2,
         revenue: stats.revenue
       }))
-      .sort((a, b) => b.m2 - a.m2);
+      .sort((a, b) => (activeCategory === 'PELICULAS' || activeCategory === 'ALL') ? b.m2 - a.m2 : b.revenue - a.revenue);
 
     return {
       totalConsumption,
@@ -6999,7 +6998,15 @@ ${rows.map(r=>{
                     {dashboardView === 'ventas' ? 'Dashboard de Ventas' : 'Dashboard de Compras'}
                   </h2>
                   <p className={cn("text-[10px] font-medium uppercase tracking-wider mt-0.5", darkMode ? "text-gray-600" : "text-gray-400")}>
-                    {dashboardView === 'ventas' ? 'Métricas globales · FUJIFILM DI-HT · DI-HL' : 'Importaciones · Inversión · Márgenes · Rotación'}
+                    {dashboardView === 'ventas'
+                      ? activeCategory === 'PELICULAS'
+                        ? 'Métricas globales · FUJIFILM DI-HT · DI-HL'
+                        : activeCategory === 'REPUESTOS'
+                        ? 'Repuestos · Líneas de repuesto · Stock y ventas'
+                        : activeCategory === 'SERVICIOS'
+                        ? 'Servicios · Contratos · Mantenimiento y soporte'
+                        : 'Métricas globales · Películas · Repuestos · Servicios'
+                      : 'Importaciones · Inversión · Márgenes · Rotación'}
                   </p>
                 </div>
                 {/* Dashboard toggle */}
@@ -7042,23 +7049,32 @@ ${rows.map(r=>{
               </div>
               <div className="flex items-center gap-2">
                 {/* Category selector */}
-                <div className="relative">
-                  <select
-                    value={activeCategory}
-                    onChange={(e) => setActiveCategory(e.target.value)}
-                    className={cn(
-                      "appearance-none pr-8 pl-3 py-1.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer outline-none",
-                      darkMode
-                        ? "bg-[#16161A] border-white/10 text-gray-300 focus:border-[#ED1C24]/30"
-                        : "bg-white border-gray-200 text-gray-600 shadow-sm focus:border-[#ED1C24]/30"
-                    )}
-                  >
-                    <option value="ALL" className={darkMode ? "bg-[#16161A] text-white" : "bg-white text-gray-800"}>Categoría: Todas</option>
-                    <option value="PELICULAS" className={darkMode ? "bg-[#16161A] text-white" : "bg-white text-gray-800"}>Películas</option>
-                    <option value="REPUESTOS" className={darkMode ? "bg-[#16161A] text-white" : "bg-white text-gray-800"}>Repuestos</option>
-                    <option value="SERVICIOS" className={darkMode ? "bg-[#16161A] text-white" : "bg-white text-gray-800"}>Servicios</option>
-                  </select>
-                  <ChevronDown className="w-3 h-3 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400" />
+                <div className={cn("flex items-center gap-0.5 p-0.5 rounded-xl border", darkMode ? "bg-white/5 border-white/10" : "bg-gray-100 border-gray-200")}>
+                  {([
+                    ['PELICULAS', 'Películas'],
+                    ['REPUESTOS', 'Repuestos'],
+                    ['SERVICIOS', 'Servicios'],
+                    ['ALL', 'Todas']
+                  ] as const).map(([val, label]) => (
+                    <button
+                      key={val}
+                      onClick={() => setActiveCategory(val)}
+                      className={cn(
+                        "px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer",
+                        activeCategory === val
+                          ? val === 'PELICULAS'
+                            ? "bg-[#ED1C24] text-white shadow-sm"
+                            : val === 'REPUESTOS'
+                              ? "bg-blue-600 text-white shadow-sm"
+                              : val === 'SERVICIOS'
+                                ? "bg-purple-600 text-white shadow-sm"
+                                : (darkMode ? "bg-white/12 text-white" : "bg-gray-800 text-white")
+                          : (darkMode ? "text-gray-500 hover:text-gray-300" : "text-gray-400 hover:text-gray-600")
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
 
                 {/* Month quick-picker */}
@@ -7218,26 +7234,55 @@ ${rows.map(r=>{
                   <React.Fragment key={i}><SkeletonDashboardCard darkMode={darkMode} /></React.Fragment>
                 ))
               ) : (<>
-              {/* m² total - PRIMARY metric */}
+              {/* m² total / Venta total - PRIMARY metric */}
               <div className={cn(
                 "p-5 rounded-xl border col-span-1 transition-colors duration-300 relative overflow-hidden",
-                darkMode ? "bg-[#ED1C24]/10 border-[#ED1C24]/30" : "bg-red-50 border-red-200 shadow-sm"
+                activeCategory === 'PELICULAS'
+                  ? (darkMode ? "bg-[#ED1C24]/10 border-[#ED1C24]/30" : "bg-red-50 border-red-200 shadow-sm")
+                  : activeCategory === 'REPUESTOS'
+                    ? (darkMode ? "bg-blue-500/10 border-blue-500/30" : "bg-blue-50 border-blue-200 shadow-sm")
+                    : activeCategory === 'SERVICIOS'
+                      ? (darkMode ? "bg-purple-500/10 border-purple-500/30" : "bg-purple-50 border-purple-200 shadow-sm")
+                      : (darkMode ? "bg-[#ED1C24]/10 border-[#ED1C24]/30" : "bg-red-50 border-red-200 shadow-sm")
               )}>
                 <div className="absolute top-0 right-0 w-20 h-20 opacity-5"><BarChart3 className="w-full h-full" /></div>
                 <div className="flex items-center justify-between mb-2">
-                  <p className={cn("text-[9px] font-bold uppercase tracking-wider", darkMode ? "text-red-400" : "text-red-500")}>m² Totales Vendidos</p>
-                  <span className={cn("text-[8px] font-black px-2 py-0.5 rounded-full",
-                    globalFilmFilter === 'all' ? (darkMode ? "bg-white/10 text-gray-400" : "bg-gray-100 text-gray-500") :
-                    globalFilmFilter === 'DIHT' ? "bg-[#ED1C24]/20 text-[#ED1C24]" :
-                    globalFilmFilter === 'DIHL' ? "bg-blue-500/20 text-blue-400" :
-                    "bg-purple-500/20 text-purple-400"
+                  <p className={cn("text-[9px] font-bold uppercase tracking-wider", 
+                    activeCategory === 'PELICULAS' ? (darkMode ? "text-red-400" : "text-red-500") :
+                    activeCategory === 'REPUESTOS' ? (darkMode ? "text-blue-400" : "text-blue-500") :
+                    activeCategory === 'SERVICIOS' ? (darkMode ? "text-purple-400" : "text-purple-500") :
+                    (darkMode ? "text-red-400" : "text-red-500")
                   )}>
-                    {globalFilmFilter === 'all' ? 'GLOBAL' : globalFilmFilter === 'DIHT' ? 'DI-HT' : globalFilmFilter === 'DIHL' ? 'DI-HL' : 'DI-ML'}
-                  </span>
+                    {activeCategory === 'PELICULAS' || activeCategory === 'ALL' ? 'm² Totales Vendidos' : `Ventas: ${activeCategory}`}
+                  </p>
+                  {(activeCategory === 'PELICULAS' || activeCategory === 'ALL') && (
+                    <span className={cn("text-[8px] font-black px-2 py-0.5 rounded-full",
+                      globalFilmFilter === 'all' ? (darkMode ? "bg-white/10 text-gray-400" : "bg-gray-100 text-gray-500") :
+                      globalFilmFilter === 'DIHT' ? "bg-[#ED1C24]/20 text-[#ED1C24]" :
+                      globalFilmFilter === 'DIHL' ? "bg-blue-500/20 text-blue-400" :
+                      "bg-purple-500/20 text-purple-400"
+                    )}>
+                      {globalFilmFilter === 'all' ? 'GLOBAL' : globalFilmFilter === 'DIHT' ? 'DI-HT' : globalFilmFilter === 'DIHL' ? 'DI-HL' : 'DI-ML'}
+                    </span>
+                  )}
                 </div>
-                <p className="text-3xl font-black leading-none text-[#ED1C24]">{globalMetrics.totalM2.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                <p className={cn("text-[10px] mt-1 font-semibold", darkMode ? "text-red-400/60" : "text-red-400")}>metros cuadrados</p>
-                <p className={cn("text-[9px] mt-0.5", darkMode ? "text-gray-600" : "text-gray-400")}>{globalMetrics.totalConsumption} cajas</p>
+                {activeCategory === 'PELICULAS' || activeCategory === 'ALL' ? (
+                  <>
+                    <p className="text-3xl font-black leading-none text-[#ED1C24]">{globalMetrics.totalM2.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    <p className={cn("text-[10px] mt-1 font-semibold", darkMode ? "text-red-400/60" : "text-red-400")}>metros cuadrados</p>
+                    <p className={cn("text-[9px] mt-0.5", darkMode ? "text-gray-600" : "text-gray-400")}>{globalMetrics.totalConsumption} cajas</p>
+                  </>
+                ) : (
+                  <>
+                    <p className={cn("text-3xl font-black leading-none",
+                      activeCategory === 'REPUESTOS' ? "text-blue-500" : "text-purple-500"
+                    )}>${globalMetrics.totalRevenue.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    <p className={cn("text-[10px] mt-1 font-semibold",
+                      activeCategory === 'REPUESTOS' ? (darkMode ? "text-blue-400/60" : "text-blue-400") : (darkMode ? "text-purple-400/60" : "text-purple-400")
+                    )}>ingreso total</p>
+                    <p className={cn("text-[9px] mt-0.5", darkMode ? "text-gray-600" : "text-gray-400")}>{globalMetrics.totalConsumption} transacciones</p>
+                  </>
+                )}
               </div>
               <div className={cn(
                 "p-5 rounded-xl border transition-colors duration-300",
@@ -7312,9 +7357,14 @@ ${rows.map(r=>{
                 <p className={cn("text-[10px] mt-1", darkMode ? "text-gray-600" : "text-gray-400")}>
                   {(dashboardStartDate || dashboardEndDate) ? 'con compras en período' : 'registrados'}
                 </p>
-                {globalMetrics.totalClients > 0 && globalMetrics.totalM2 > 0 && (
+                {globalMetrics.totalClients > 0 && (
                   <p className={cn("text-[9px] mt-0.5 font-semibold", darkMode ? "text-gray-500" : "text-gray-400")}>
-                    {(globalMetrics.totalM2 / globalMetrics.totalClients).toFixed(1)} m²/cliente
+                    {activeCategory === 'PELICULAS' || activeCategory === 'ALL'
+                      ? globalMetrics.totalM2 > 0
+                        ? `${(globalMetrics.totalM2 / globalMetrics.totalClients).toFixed(1)} m²/cliente`
+                        : '0 m²/cliente'
+                      : `$${(globalMetrics.totalRevenue / globalMetrics.totalClients).toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} prom./cliente`
+                    }
                   </p>
                 )}
               </div>
@@ -7343,26 +7393,31 @@ ${rows.map(r=>{
               )}>
                 <div className="flex items-center justify-between mb-6">
                   <h3 className={cn("text-[10px] font-bold uppercase tracking-wider flex items-center gap-2", darkMode ? "text-gray-500" : "text-gray-400")}>
-                    <BarChart3 className="w-3.5 h-3.5 text-[#ED1C24]" /> Distribución Global por Medida — m²
+                    <BarChart3 className="w-3.5 h-3.5 text-[#ED1C24]" /> 
+                    {activeCategory === 'PELICULAS' || activeCategory === 'ALL'
+                      ? 'Distribución Global por Medida — m²'
+                      : `Distribución por Producto — Ventas ($)`
+                    }
                   </h3>
-                  <div className={cn("flex items-center gap-1 p-1 rounded-xl", darkMode ? "bg-white/5" : "bg-gray-100")}>
-                    {([['all','Global'], ['DIHT','DI-HT'], ['DIHL','DI-HL']] as const).map(([val, label]) => (
-                      <button key={val} onClick={() => { setSizeChartFilter(val); setGlobalFilmFilter(val === 'all' ? 'all' : val as any); }}
-                        className={cn("px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all",
-                          globalFilmFilter === val || (val === 'all' && globalFilmFilter === 'all')
-                            ? val === 'DIHL' ? "bg-blue-500/20 text-blue-400 ring-1 ring-blue-500/30"
-                            : val === 'DIHT' ? "bg-[#ED1C24]/15 text-[#ED1C24] ring-1 ring-[#ED1C24]/30"
-                            : (darkMode ? "bg-white/12 text-white" : "bg-gray-800 text-white")
-                            : (darkMode ? "text-gray-600 hover:text-gray-400 hover:bg-white/5" : "text-gray-400 hover:text-gray-600 hover:bg-gray-200")
-                        )}>{label}</button>
-                    ))}
-                  </div>
+                  {(activeCategory === 'PELICULAS' || activeCategory === 'ALL') && (
+                    <div className={cn("flex items-center gap-1 p-1 rounded-xl", darkMode ? "bg-white/5" : "bg-gray-100")}>
+                      {([['all','Global'], ['DIHT','DI-HT'], ['DIHL','DI-HL']] as const).map(([val, label]) => (
+                        <button key={val} onClick={() => { setSizeChartFilter(val); setGlobalFilmFilter(val === 'all' ? 'all' : val as any); }}
+                          className={cn("px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all",
+                            globalFilmFilter === val || (val === 'all' && globalFilmFilter === 'all')
+                              ? val === 'DIHL' ? "bg-blue-500/20 text-blue-400 ring-1 ring-blue-500/30"
+                              : val === 'DIHT' ? "bg-[#ED1C24]/15 text-[#ED1C24] ring-1 ring-[#ED1C24]/30"
+                              : (darkMode ? "bg-white/12 text-white" : "bg-gray-800 text-white")
+                              : (darkMode ? "text-gray-600 hover:text-gray-400 hover:bg-white/5" : "text-gray-400 hover:text-gray-600 hover:bg-gray-200")
+                          )}>{label}</button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="h-72 min-w-0">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={(() => {
                       const filtered = globalFilmFilter === 'all' ? activeCategoryConsumos
-                        : globalFilmFilter === 'DIHT' ? activeCategoryConsumos.filter(r => !r.film_type || r.film_type === 'DIHT')
                         : activeCategoryConsumos.filter(r => r.film_type === globalFilmFilter);
                       const dated = filtered.filter(r => {
                         const d = new Date(r.order_date);
@@ -7370,37 +7425,84 @@ ${rows.map(r=>{
                         if (dashboardEndDate && d > new Date(dashboardEndDate)) return false;
                         return true;
                       });
-                      const distM2 = {} as Record<string, number>;
-                      const distBoxes = {} as Record<string, number>;
-                      dated.forEach(r => {
-                        const m2 = getTotalM2(r.quantity, r.size, r.film_type);
-                        distM2[r.size] = parseFloat(((distM2[r.size] || 0) + m2).toFixed(2));
-                        distBoxes[r.size] = (distBoxes[r.size] || 0) + r.quantity;
-                      });
-                      return Object.entries(distM2).map(([name, m2]) => ({ name, m2, cajas: distBoxes[name] || 0 })).sort((a,b) => b.m2 - a.m2);
+                      if (activeCategory === 'PELICULAS' || activeCategory === 'ALL') {
+                        const distM2 = {} as Record<string, number>;
+                        const distBoxes = {} as Record<string, number>;
+                        dated.forEach(r => {
+                          const m2 = getTotalM2(r.quantity, r.size, r.film_type);
+                          distM2[r.size] = parseFloat(((distM2[r.size] || 0) + m2).toFixed(2));
+                          distBoxes[r.size] = (distBoxes[r.size] || 0) + r.quantity;
+                        });
+                        return Object.entries(distM2).map(([name, m2]) => ({ name, m2, cajas: distBoxes[name] || 0 })).sort((a,b) => b.m2 - a.m2);
+                      } else {
+                        const distRevenue = {} as Record<string, number>;
+                        const distQty = {} as Record<string, number>;
+                        dated.forEach(r => {
+                          const price = (r.sale_price !== null && r.sale_price !== undefined) ? r.sale_price : (r.unit_cost || 0);
+                          const rev = r.quantity * price;
+                          const name = r.size || 'Varios';
+                          distRevenue[name] = parseFloat(((distRevenue[name] || 0) + rev).toFixed(2));
+                          distQty[name] = (distQty[name] || 0) + r.quantity;
+                        });
+                        return Object.entries(distRevenue)
+                          .map(([name, revenue]) => ({ name, revenue, quantity: distQty[name] || 0 }))
+                          .sort((a,b) => b.revenue - a.revenue)
+                          .slice(0, 10);
+                      }
                     })()}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={darkMode ? "#222" : "#F0F0F0"} />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 11, fontWeight: '600', fill: darkMode ? '#666' : '#888'}} />
-                      <YAxis axisLine={false} tickLine={false} tick={{fontSize: 11, fontWeight: '600', fill: darkMode ? '#666' : '#888'}} tickFormatter={(v) => `${v}m²`} />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: '600', fill: darkMode ? '#666' : '#888'}} />
+                      <YAxis
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{fontSize: 10, fontWeight: '600', fill: darkMode ? '#666' : '#888'}}
+                        tickFormatter={(v) => (activeCategory === 'PELICULAS' || activeCategory === 'ALL') ? `${v}m²` : `$${v}`}
+                      />
                       <Tooltip
                         cursor={{fill: darkMode ? 'rgba(255,255,255,0.03)' : '#F9FAFB'}}
                         contentStyle={darkMode
                           ? { backgroundColor: '#16161A', border: '1px solid rgba(255,255,255,0.08)', color: '#fff', borderRadius: '10px', fontSize: '11px' }
                           : { borderRadius: '10px', fontSize: '11px', border: '1px solid #e5e7eb' }}
-                        formatter={(value: any, name: string) => [
-                          name === 'm2' ? `${value} m²` : `${value} cajas`,
-                          name === 'm2' ? 'Superficie' : 'Cajas'
-                        ]}
+                        formatter={(value: any, name: string) => {
+                          if (activeCategory === 'PELICULAS' || activeCategory === 'ALL') {
+                            return [
+                              name === 'm2' ? `${value} m²` : `${value} cajas`,
+                              name === 'm2' ? 'Superficie' : 'Cajas'
+                            ];
+                          } else {
+                            return [
+                              name === 'revenue' ? `$${parseFloat(value).toFixed(2)}` : `${value} unidades`,
+                              name === 'revenue' ? 'Ventas' : 'Cantidad'
+                            ];
+                          }
+                        }}
                         itemStyle={darkMode ? { color: '#fff' } : {}}
                       />
-                      <Bar dataKey="m2" name="m2" radius={[6, 6, 0, 0]} barSize={50}>
-                        {[0,1,2,3].map((index) => (
-                          <Cell key={`cell-${index}`} fill={
-                            globalFilmFilter === 'DIHL'
-                              ? (index % 2 === 0 ? '#3B82F6' : '#1D4ED8')
-                              : (index % 2 === 0 ? '#ED1C24' : (darkMode ? '#2a2a2e' : '#E5E7EB'))
-                          } />
-                        ))}
+                      <Bar
+                        dataKey={(activeCategory === 'PELICULAS' || activeCategory === 'ALL') ? "m2" : "revenue"}
+                        name={(activeCategory === 'PELICULAS' || activeCategory === 'ALL') ? "m2" : "revenue"}
+                        radius={[6, 6, 0, 0]}
+                        barSize={50}
+                      >
+                        {(() => {
+                          if (activeCategory === 'PELICULAS' || activeCategory === 'ALL') {
+                            return [0, 1, 2, 3].map((index) => (
+                              <Cell key={`cell-${index}`} fill={
+                                globalFilmFilter === 'DIHL'
+                                  ? (index % 2 === 0 ? '#3B82F6' : '#1D4ED8')
+                                  : (index % 2 === 0 ? '#ED1C24' : (darkMode ? '#2a2a2e' : '#E5E7EB'))
+                              } />
+                            ));
+                          } else if (activeCategory === 'REPUESTOS') {
+                            return [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((index) => (
+                              <Cell key={`cell-${index}`} fill={index % 2 === 0 ? '#3B82F6' : '#2563EB'} />
+                            ));
+                          } else {
+                            return [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((index) => (
+                              <Cell key={`cell-${index}`} fill={index % 2 === 0 ? '#8B5CF6' : '#7C3AED'} />
+                            ));
+                          }
+                        })()}
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
@@ -7414,7 +7516,7 @@ ${rows.map(r=>{
                 <div className="flex items-center justify-between mb-4">
                   <h3 className={cn("text-[10px] font-bold uppercase tracking-wider flex items-center gap-2", darkMode ? "text-gray-500" : "text-gray-400")}>
                     <TrendingUp className="w-3.5 h-3.5 text-[#ED1C24]" />
-                    Top {topClientsLimit === 'all' ? 5 : topClientsLimit} Clientes — m²
+                    Top {topClientsLimit === 'all' ? 5 : topClientsLimit} Clientes — {(activeCategory === 'PELICULAS' || activeCategory === 'ALL') ? 'm²' : 'Ventas ($)'}
                   </h3>
                   <div className="flex items-center gap-1.5">
                     {/* Top 5 / Top 10 toggle inline */}
@@ -7442,34 +7544,56 @@ ${rows.map(r=>{
                 </div>
                 {/* List — expands from 5 to 10 in place */}
                 <div className="space-y-2.5">
-                  {((globalMetrics as any).allClientsSorted?.slice(0, topClientsLimit === 'all' ? 5 : topClientsLimit) || globalMetrics.topClients).map((client: any, idx: number) => (
-                    <div key={idx}
-                      className={cn("flex items-center gap-3 p-2 rounded-xl cursor-pointer transition-colors",
-                        darkMode ? "hover:bg-white/4" : "hover:bg-gray-50"
-                      )}
-                      onClick={() => {
-                        const c = allClients.find(x => x.id === client.id);
-                        if (c) setClientPreviewModal({ client: c, rank: idx + 1, m2: client.m2, cajas: client.value });
-                      }}
-                    >
-                      <div className={cn(
-                        "w-6 h-6 rounded-lg flex items-center justify-center font-black text-[10px] shrink-0",
-                        idx === 0 ? "bg-[#ED1C24] text-white" : idx === 1 ? (darkMode ? "bg-white/15 text-gray-200" : "bg-gray-200 text-gray-600") : idx === 2 ? (darkMode ? "bg-white/8 text-gray-400" : "bg-gray-100 text-gray-500") : (darkMode ? "bg-white/5 text-gray-600" : "bg-gray-50 text-gray-400")
-                      )}>{idx + 1}</div>
-                      <div className="flex-1 min-w-0">
-                        <p className={cn("font-semibold text-xs truncate", darkMode ? "text-gray-200" : "text-gray-800")}>{client.name}</p>
-                        <div className={cn("mt-1 h-0.5 rounded-full overflow-hidden", darkMode ? "bg-white/8" : "bg-gray-100")}>
-                          <div className="h-full bg-[#ED1C24] rounded-full"
-                            style={{ width: `${(globalMetrics as any).allClientsSorted?.[0]?.m2 > 0 ? (client.m2 / (globalMetrics as any).allClientsSorted[0].m2) * 100 : 0}%` }} />
+                  {((globalMetrics as any).allClientsSorted?.slice(0, topClientsLimit === 'all' ? 5 : topClientsLimit) || globalMetrics.topClients).map((client: any, idx: number) => {
+                    const maxVal = (activeCategory === 'PELICULAS' || activeCategory === 'ALL')
+                      ? ((globalMetrics as any).allClientsSorted?.[0]?.m2 || 1)
+                      : ((globalMetrics as any).allClientsSorted?.[0]?.revenue || 1);
+                    const currentVal = (activeCategory === 'PELICULAS' || activeCategory === 'ALL') ? client.m2 : client.revenue;
+                    const progressPct = maxVal > 0 ? (currentVal / maxVal) * 100 : 0;
+                    
+                    return (
+                      <div key={idx}
+                        className={cn("flex items-center gap-3 p-2 rounded-xl cursor-pointer transition-colors",
+                          darkMode ? "hover:bg-white/4" : "hover:bg-gray-50"
+                        )}
+                        onClick={() => {
+                          const c = allClients.find(x => x.id === client.id);
+                          if (c) setClientPreviewModal({ client: c, rank: idx + 1, m2: client.m2, cajas: client.value });
+                        }}
+                      >
+                        <div className={cn(
+                          "w-6 h-6 rounded-lg flex items-center justify-center font-black text-[10px] shrink-0",
+                          idx === 0 ? "bg-[#ED1C24] text-white" : idx === 1 ? (darkMode ? "bg-white/15 text-gray-200" : "bg-gray-200 text-gray-600") : idx === 2 ? (darkMode ? "bg-white/8 text-gray-400" : "bg-gray-100 text-gray-500") : (darkMode ? "bg-white/5 text-gray-600" : "bg-gray-50 text-gray-400")
+                        )}>{idx + 1}</div>
+                        <div className="flex-1 min-w-0">
+                          <p className={cn("font-semibold text-xs truncate", darkMode ? "text-gray-200" : "text-gray-800")}>{client.name}</p>
+                          <div className={cn("mt-1 h-0.5 rounded-full overflow-hidden", darkMode ? "bg-white/8" : "bg-gray-100")}>
+                            <div className={cn("h-full rounded-full",
+                              activeCategory === 'REPUESTOS' ? "bg-blue-500" : activeCategory === 'SERVICIOS' ? "bg-purple-500" : "bg-[#ED1C24]"
+                            )} style={{ width: `${progressPct}%` }} />
+                          </div>
+                          <p className={cn("text-[9px] mt-0.5", darkMode ? "text-gray-600" : "text-gray-400")}>
+                            {client.value} {(activeCategory === 'PELICULAS' || activeCategory === 'ALL') ? 'cj' : 'trans.'}
+                          </p>
                         </div>
-                        <p className={cn("text-[9px] mt-0.5", darkMode ? "text-gray-600" : "text-gray-400")}>{client.value} cj</p>
+                        <div className="text-right shrink-0">
+                          <p className={cn("font-black text-sm", 
+                            activeCategory === 'PELICULAS' || activeCategory === 'ALL'
+                              ? (darkMode ? "text-cyan-400" : "text-cyan-600")
+                              : activeCategory === 'REPUESTOS' ? "text-blue-500" : "text-purple-500"
+                          )}>
+                            {activeCategory === 'PELICULAS' || activeCategory === 'ALL'
+                              ? client.m2.toFixed(1)
+                              : `$${client.revenue.toLocaleString('es-EC', { maximumFractionDigits: 0 })}`
+                            }
+                          </p>
+                          <p className={cn("text-[9px]", darkMode ? "text-gray-600" : "text-gray-400")}>
+                            {activeCategory === 'PELICULAS' || activeCategory === 'ALL' ? 'm²' : 'monto'}
+                          </p>
+                        </div>
                       </div>
-                      <div className="text-right shrink-0">
-                        <p className={cn("font-black text-sm", darkMode ? "text-cyan-400" : "text-cyan-600")}>{client.m2.toFixed(1)}</p>
-                        <p className={cn("text-[9px]", darkMode ? "text-gray-600" : "text-gray-400")}>m²</p>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
               
@@ -7523,8 +7647,12 @@ ${rows.map(r=>{
                         darkMode ? "border-white/8" : "border-gray-100"
                       )}>
                         <th className="px-5 py-3 whitespace-nowrap">Vendedor</th>
-                        <th className="px-5 py-3 text-center whitespace-nowrap">m² Vendidos</th>
-                        <th className="px-5 py-3 text-center whitespace-nowrap">Cajas</th>
+                        {(activeCategory === 'PELICULAS' || activeCategory === 'ALL') && (
+                          <th className="px-5 py-3 text-center whitespace-nowrap">m² Vendidos</th>
+                        )}
+                        <th className="px-5 py-3 text-center whitespace-nowrap">
+                          {activeCategory === 'PELICULAS' || activeCategory === 'ALL' ? 'Cajas' : 'Transacciones'}
+                        </th>
                         <th className="px-5 py-3 text-center whitespace-nowrap">Prom. Mensual</th>
                         <th className="px-5 py-3 text-center whitespace-nowrap">Este Mes</th>
                         <th className="px-5 py-3 text-center whitespace-nowrap">Meta Mensual</th>
@@ -7557,19 +7685,25 @@ ${rows.map(r=>{
                             </div>
                             {salesperson.name}
                           </td>
-                          <td className="px-5 py-3.5 text-center whitespace-nowrap">
-                            <span className={cn("font-black text-lg", darkMode ? "text-cyan-400" : "text-cyan-600")}>
-                              {(globalMetrics.salespersonData.find((s: any) => s.name === salesperson.name)?.m2 || 0).toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
-                            </span>
-                            <span className={cn("text-[9px] block", darkMode ? "text-gray-600" : "text-gray-400")}>m²</span>
-                          </td>
+                          {(activeCategory === 'PELICULAS' || activeCategory === 'ALL') && (
+                            <td className="px-5 py-3.5 text-center whitespace-nowrap">
+                              <span className={cn("font-black text-lg", darkMode ? "text-cyan-400" : "text-cyan-600")}>
+                                {(globalMetrics.salespersonData.find((s: any) => s.name === salesperson.name)?.m2 || 0).toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                              </span>
+                              <span className={cn("text-[9px] block", darkMode ? "text-gray-600" : "text-gray-400")}>m²</span>
+                            </td>
+                          )}
                           <td className="px-5 py-3.5 text-center font-black text-lg whitespace-nowrap">
                             {salesperson.quantity}
-                            <span className={cn("text-[9px] block font-normal", darkMode ? "text-gray-600" : "text-gray-400")}>cajas</span>
+                            <span className={cn("text-[9px] block font-normal", darkMode ? "text-gray-600" : "text-gray-400")}>
+                              {activeCategory === 'PELICULAS' || activeCategory === 'ALL' ? 'cajas' : 'unid.'}
+                            </span>
                           </td>
                           <td className="px-5 py-3.5 text-center whitespace-nowrap">
                             <span className="font-black text-lg">{monthlyAvg}</span>
-                            <span className={cn("text-[9px] block", darkMode ? "text-gray-600" : "text-gray-400")}>cj/mes</span>
+                            <span className={cn("text-[9px] block", darkMode ? "text-gray-600" : "text-gray-400")}>
+                              {activeCategory === 'PELICULAS' || activeCategory === 'ALL' ? 'cj/mes' : 'unid/mes'}
+                            </span>
                           </td>
                           <td className="px-5 py-3.5 text-center whitespace-nowrap">
                             <span className={cn("font-black text-lg", thisMonthQty === 0 ? (darkMode ? "text-gray-600" : "text-gray-300") : "")}>{thisMonthQty}</span>
@@ -7607,7 +7741,7 @@ ${rows.map(r=>{
                               >
                                 {goal > 0 ? (
                                   <>
-                                    <span className="text-xs font-black">{thisMonthQty} / {goal} cj</span>
+                                    <span className="text-xs font-black">{thisMonthQty} / {goal} {activeCategory === 'PELICULAS' || activeCategory === 'ALL' ? 'cj' : 'unid'}</span>
                                     <div className={cn("w-24 h-1.5 rounded-full overflow-hidden", darkMode ? "bg-white/10" : "bg-gray-200")}>
                                       <div className={cn("h-full rounded-full transition-all",
                                         pct >= 100 ? "bg-emerald-400" : pct >= 70 ? "bg-amber-400" : "bg-[#ED1C24]"
