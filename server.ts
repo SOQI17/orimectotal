@@ -43,6 +43,12 @@ const mockLoyalty = [
 
 app.use(express.json());
 
+// Set headers to allow Firebase auth popups to communicate
+app.use((req, res, next) => {
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+  next();
+});
+
 // API Routes (Now using Firestore via Admin SDK with Mock Fallback)
 app.get("/api/clients", async (req, res) => {
   if (!db) return res.json(mockClients);
