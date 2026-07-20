@@ -8234,7 +8234,10 @@ ${rows.map(r=>{
                         )}
                         onClick={() => {
                           const c = allClients.find(x => x.id === client.id);
-                          if (c) setClientPreviewModal({ client: c, rank: idx + 1, m2: client.m2, cajas: client.value });
+                          if (c) {
+                            setSelectedClient(c);
+                            setView('clients');
+                          }
                         }}
                       >
                         <div className={cn(
@@ -16059,7 +16062,7 @@ ${rows.map(r=>{
                       const barPct = (client.m2 / maxM2) * 100;
                       return (
                         <div key={client.id}
-                          onClick={() => { const c = allClients.find(x => x.id === client.id); if (c) setClientPreviewModal({ client: c, rank: idx+1, m2: client.m2, cajas: client.value }); }}
+                          onClick={() => { const c = allClients.find(x => x.id === client.id); if (c) { setSelectedClient(c); setView('clients'); setShowTopClientsModal(false); } }}
                           className={cn("flex items-center gap-4 px-4 py-3.5 rounded-xl border cursor-pointer transition-all",
                             idx === 0
                               ? (darkMode ? "bg-[#ED1C24]/8 border-[#ED1C24]/20 hover:bg-[#ED1C24]/12" : "bg-red-50 border-red-200 hover:bg-red-50/80")
@@ -16120,7 +16123,7 @@ ${rows.map(r=>{
                         return (
                           <tr key={client.id}
                             className={cn("transition-colors cursor-pointer", darkMode ? "hover:bg-white/4" : "hover:bg-gray-50")}
-                            onClick={() => { const c = allClients.find(x => x.id === client.id); if (c) setClientPreviewModal({ client: c, rank: idx+1, m2: client.m2, cajas: client.value }); }}
+                            onClick={() => { const c = allClients.find(x => x.id === client.id); if (c) { setSelectedClient(c); setView('clients'); setShowTopClientsModal(false); } }}
                           >
                             <td className="px-5 py-2.5">
                               <span className={cn("w-6 h-6 rounded-lg flex items-center justify-center font-black text-[10px]",
