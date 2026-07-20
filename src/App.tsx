@@ -3314,6 +3314,7 @@ function App() {
   };
 
   const [purgeYear, setPurgeYear] = useState<string>('2026');
+  const [purgeMessage, setPurgeMessage] = useState<string>('');
 
   const handlePurgeYearData = async () => {
     const isAll = purgeYear === 'ALL';
@@ -3349,14 +3350,14 @@ function App() {
     }
 
     try {
+      const totalToDelete = recordsToDelete.length;
+      setPurgeMessage(isAll ? `Eliminando ${totalToDelete} registros del sistema...` : `Eliminando registros del año ${purgeYear}...`);
       setCsvImportStatus('importing');
       setCsvImportProgress(0);
       
-      const totalToDelete = recordsToDelete.length;
-      
-      // Delete in batches of 400 with progress updates
-      for (let i = 0; i < recordsToDelete.length; i += 400) {
-        const chunk = recordsToDelete.slice(i, i + 400);
+      // Delete in batches of 300 with UI yields
+      for (let i = 0; i < recordsToDelete.length; i += 300) {
+        const chunk = recordsToDelete.slice(i, i + 300);
         const batch = writeBatch(db);
         chunk.forEach(record => {
           batch.delete(doc(db, 'consumos', record.id.toString()));
@@ -3364,15 +3365,18 @@ function App() {
         await batch.commit();
         const percent = Math.min(100, Math.round(((i + chunk.length) / totalToDelete) * 100));
         setCsvImportProgress(percent);
+        await new Promise(r => setTimeout(r, 20));
       }
 
       localStorage.removeItem('cached_consumos');
       addAuditLog('delete_record', isAll ? `Eliminó TODOS los registros del sistema (${totalToDelete} consumos)` : `Eliminó todos los registros del año ${purgeYear} (${totalToDelete} consumos)`);
       showToast(isAll ? `Se eliminaron con éxito los ${totalToDelete} registros del sistema.` : `Se eliminaron con éxito ${totalToDelete} registros del año ${purgeYear}.`, "success");
+      setPurgeMessage('');
       setCsvImportStatus('idle');
     } catch (error: any) {
       console.error(`Error purging ${purgeYear} data:`, error);
       showToast(`Error al eliminar: ${error.message || error}`, "error");
+      setPurgeMessage('');
       setCsvImportStatus('idle');
     }
   };
@@ -14169,7 +14173,7 @@ ${rows.map(r=>{
                     <Upload className="w-8 h-8 text-blue-500 animate-pulse" />
                   </div>
                   <div className="text-center w-full max-w-xs">
-                    <p className="font-bold text-sm mb-1">Importando registros...</p>
+                    <p className="font-bold text-sm mb-1">{purgeMessage || "Importando registros..."}</p>
                     <p className={cn("text-xs mb-4", darkMode ? "text-gray-500" : "text-gray-400")}>{csvImportProgress}% completado</p>
                     <div className={cn("h-2 rounded-full overflow-hidden", darkMode ? "bg-white/10" : "bg-gray-100")}>
                       <div
