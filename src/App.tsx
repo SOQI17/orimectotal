@@ -7193,7 +7193,7 @@ ${rows.map(r=>{
                         )}>
                           <h3 className={cn("text-[10px] font-bold uppercase tracking-wider mb-5 flex items-center justify-between", darkMode ? "text-gray-500" : "text-gray-400")}>
                             <span>Facturación Mensual ($)</span>
-                            <span className="text-emerald-500 text-xs font-mono font-bold">${clientMetrics.total.toLocaleString()}</span>
+                            <span className="text-emerald-500 text-xs font-mono font-bold">${clientMonthlyRevenue.reduce((acc, item) => acc + item.total, 0).toLocaleString()}</span>
                           </h3>
                           <div className="h-44 min-w-0" style={{minHeight: 176}}>
                             {clientMonthlyRevenue.length > 0 ? (
