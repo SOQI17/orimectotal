@@ -5372,7 +5372,9 @@ ${rows.map(r=>{
       const goal = salespersonGoals[spName] || 0;
       const spConsumos = allConsumos.filter(r => {
         const c = clientsById.get(r.client_id);
-        return (c?.salesperson || '').toUpperCase().trim() === spName;
+        const isSp = (c?.salesperson || '').toUpperCase().trim() === spName;
+        const isCat = activeCategory === 'ALL' || (r.categoria || 'PELICULAS') === activeCategory;
+        return isSp && isCat;
       });
 
       if (!spConsumos.length) return null;
@@ -5402,7 +5404,10 @@ ${rows.map(r=>{
       if (globalFilmFilter !== 'all') periodConsumos = periodConsumos.filter(r => (r.film_type || 'DIHT') === globalFilmFilter);
       const quantity = periodConsumos.reduce((s, r) => s + effectiveQty(r), 0);
       const periodM2 = parseFloat(periodConsumos.reduce((s, r) => s + getTotalM2(effectiveQty(r), r.size, r.film_type), 0).toFixed(2));
-      const revenue = periodConsumos.reduce((s, r) => s + (effectiveQty(r) * (r.unit_cost || 0)), 0);
+      const revenue = periodConsumos.reduce((s, r) => {
+        const price = (r.sale_price !== null && r.sale_price !== undefined) ? r.sale_price : (r.unit_cost || 0);
+        return s + (effectiveQty(r) * price);
+      }, 0);
 
       const history = Array.from({ length: 6 }, (_, i) => {
         const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
@@ -5420,7 +5425,7 @@ ${rows.map(r=>{
 
       return { name: spName, quantity, periodM2, totalM2sp, revenue, goal, thisMonth, thisMonthM2, lastMonth, monthlyRevenue, monthlyAvg, monthlyAvgM2, history, progressPct, growthVsLastMonth };
     }).filter(Boolean).sort((a, b) => (b!.quantity) - (a!.quantity)) as any[];
-  }, [salespersonGoals, allConsumos, allClients, clientsById, dashboardStartDate, dashboardEndDate, globalFilmFilter, view]);
+  }, [salespersonGoals, allConsumos, allClients, clientsById, dashboardStartDate, dashboardEndDate, globalFilmFilter, view, activeCategory]);
 
   // ── INTELLIGENCE: Client Health Score ────────────────────────────────────
   const clientHealthScores = useMemo(() => {
@@ -8244,8 +8249,11 @@ ${rows.map(r=>{
                     vendorCompareSelected.forEach(sp => {
                       row[sp] = allConsumos.filter(r => {
                         const d = new Date(r.order_date);
+                        const isCat = activeCategory === 'ALL' || (r.categoria || 'PELICULAS') === activeCategory;
+                        const c = clientsById.get(r.client_id);
+                        const spName = (c?.salesperson || '').toUpperCase().trim();
                         return d.getFullYear() === now.getFullYear() && d.getMonth() === mi
-                          && (r as any).salesperson_name === sp && !r.is_return;
+                          && (spName === sp || (r as any).salesperson_name === sp) && !r.is_return && isCat;
                       }).reduce((s,r) => s + r.quantity, 0);
                     });
                     return row;
@@ -8294,75 +8302,7 @@ ${rows.map(r=>{
             </div>
             )} {/* end loading ? skeleton : charts */}
 
-            {/* ── RETORNOS ── */}
-            {returnsSummary.returns.length > 0 && (
-              <div className={cn("rounded-xl border overflow-hidden", darkMode ? "bg-[#16161A] border-white/8" : "bg-white border-gray-200/70 shadow-sm")}>
-                <div className={cn("px-6 py-4 border-b flex items-center justify-between flex-wrap gap-3", darkMode ? "border-white/8 bg-white/3" : "border-gray-100 bg-gray-50")}>
-                  <h3 className={cn("text-[10px] font-bold uppercase tracking-wider flex items-center gap-2", darkMode ? "text-gray-400" : "text-gray-600")}>
-                    <TrendingDown className="w-3.5 h-3.5 text-amber-400" /> Retornos / Devoluciones
-                  </h3>
-                  <div className="flex items-center gap-4">
-                    <div className="text-center">
-                      <p className="text-lg font-black text-amber-400">{returnsSummary.totalUnits}</p>
-                      <p className={cn("text-[9px]", darkMode ? "text-gray-600" : "text-gray-400")}>cajas devueltas</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-lg font-black text-red-400">${returnsSummary.totalValue.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                      <p className={cn("text-[9px]", darkMode ? "text-gray-600" : "text-gray-400")}>valor total devuelto</p>
-                    </div>
-                  </div>
-                </div>
-                <div className="overflow-x-auto max-h-72 overflow-y-auto custom-scrollbar">
-                  <table className="w-full text-left text-xs">
-                    <thead className={cn("text-[9px] font-bold uppercase tracking-wider sticky top-0 z-10", darkMode ? "text-gray-600 bg-[#16161A]" : "text-gray-400 bg-white")}>
-                      <tr>
-                        <th className="px-5 py-2.5">Fecha</th>
-                        <th className="px-5 py-2.5">Cliente</th>
-                        <th className="px-5 py-2.5">Vendedor</th>
-                        <th className="px-5 py-2.5">Factura</th>
-                        <th className="px-5 py-2.5 text-center">Medida</th>
-                        <th className="px-5 py-2.5 text-center">Cajas</th>
-                        <th className="px-5 py-2.5 text-right">Valor</th>
-                        <th className="px-5 py-2.5 text-center">Acción</th>
-                      </tr>
-                    </thead>
-                    <tbody className={cn("divide-y", darkMode ? "divide-white/4" : "divide-gray-50")}>
-                      {returnsSummary.returns.map((r, i) => {
-                        const client = allClients.find(c => c.id === r.client_id);
-                        return (
-                          <tr key={i} className={cn("transition-colors", darkMode ? "hover:bg-white/3" : "hover:bg-amber-50/40")}>
-                            <td className={cn("px-5 py-3 font-medium", darkMode ? "text-gray-400" : "text-gray-600")}>{r.order_date}</td>
-                            <td className="px-5 py-3">
-                              <p className="font-semibold truncate max-w-[200px]">{client?.name || '—'}</p>
-                              <p className={cn("text-[9px]", darkMode ? "text-gray-600" : "text-gray-400")}>{client?.province || '—'}</p>
-                            </td>
-                            <td className={cn("px-5 py-3 text-[10px]", darkMode ? "text-gray-500" : "text-gray-400")}>{client?.salesperson || '—'}</td>
-                            <td className={cn("px-5 py-3 font-mono text-[10px]", darkMode ? "text-gray-500" : "text-gray-400")}>{r.invoice_number || '—'}</td>
-                            <td className="px-5 py-3 text-center">
-                              {r.size && <span className={cn("px-1.5 py-0.5 rounded text-[9px] font-black uppercase", darkMode ? "bg-white/10 text-gray-300" : "bg-gray-800 text-white")}>{r.size}</span>}
-                            </td>
-                            <td className="px-5 py-3 text-center">
-                              <span className="font-black text-amber-400">{r.quantity}</span>
-                            </td>
-                            <td className="px-5 py-3 text-right font-bold text-red-400">
-                              ${Math.abs(r.quantity * (r.unit_cost || 0)).toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </td>
-                            <td className="px-5 py-3 text-center">
-                              <button onClick={() => { if (client) { setSelectedClient(client); setView('clients'); } }}
-                                className={cn("text-[9px] font-bold px-2.5 py-1 rounded-lg transition-colors inline-flex items-center gap-1",
-                                  darkMode ? "bg-white/8 text-gray-400 hover:bg-white/12" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                                )}>
-                                <ArrowRight className="w-3 h-3" /> Ver
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
+
 
             </div>
             {/* ── PURCHASES DASHBOARD ── */}
