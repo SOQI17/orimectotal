@@ -4353,36 +4353,54 @@ ${rows.map(r=>{
     win.onload = () => setTimeout(() => { win.print(); win.onafterprint = ()=>win.close(); showToast('PDF de Proyección generado','success'); }, 400);
   };
 
+  const activeClientIdsSet = useMemo(() => {
+    if (activeCategory === 'ALL') return null;
+    const set = new Set<number>();
+    for (let i = 0; i < activeCategoryConsumos.length; i++) {
+      set.add(activeCategoryConsumos[i].client_id);
+    }
+    return set;
+  }, [activeCategoryConsumos, activeCategory]);
+
+  const invoiceMatchingClientIdsSet = useMemo(() => {
+    const searchTrim = searchTerm.trim();
+    if (!searchTrim) return null;
+    const searchLower = searchTrim.toLowerCase();
+    const set = new Set<number>();
+    for (let i = 0; i < activeCategoryConsumos.length; i++) {
+      const r = activeCategoryConsumos[i];
+      if (r.invoice_number && String(r.invoice_number).toLowerCase().includes(searchLower)) {
+        set.add(r.client_id);
+      }
+    }
+    return set;
+  }, [activeCategoryConsumos, searchTerm]);
+
   const filteredClients = useMemo(() => {
+    const searchTrim = searchTerm.trim();
+    const searchLower = searchTrim.toLowerCase();
     return allClients.filter(c => {
       // Filter by active category: client must have transactions in the selected category
-      if (activeCategory !== 'ALL') {
-        const hasPurchases = activeCategoryConsumos.some(r => r.client_id === c.id);
-        if (!hasPurchases) return false;
+      if (activeClientIdsSet && !activeClientIdsSet.has(c.id)) {
+        return false;
       }
+      if (!searchTrim) return true;
 
-      const searchLower = searchTerm.toLowerCase();
       const nameMatch = String(c.name).toLowerCase().includes(searchLower);
-      const rucMatch = String(c.ruc_id).includes(searchTerm);
+      const rucMatch = String(c.ruc_id).includes(searchTrim);
       const altName = altNames[c.id] || '';
       const altNameMatch = altName.toLowerCase().includes(searchLower);
       const provinceMatch = String(c.province || '').toLowerCase().includes(searchLower);
       const clientCodeMatch = String(c.client_code || '').toLowerCase().includes(searchLower);
       const salespersonMatch = String(c.salesperson || '').toLowerCase().includes(searchLower);
-      
-      const hasInvoiceMatch = activeCategoryConsumos.some(r => 
-        r.client_id === c.id && 
-        r.invoice_number && 
-        String(r.invoice_number).toLowerCase().includes(searchLower)
-      );
-
+      const hasInvoiceMatch = invoiceMatchingClientIdsSet ? invoiceMatchingClientIdsSet.has(c.id) : false;
       const hasPrinterSerialMatch = c.printers?.some(p => 
         p.serial && String(p.serial).toLowerCase().includes(searchLower)
       ) || false;
       
       return nameMatch || rucMatch || altNameMatch || provinceMatch || clientCodeMatch || salespersonMatch || hasInvoiceMatch || hasPrinterSerialMatch;
     });
-  }, [searchTerm, altNames, allClients, activeCategory, activeCategoryConsumos]);
+  }, [searchTerm, altNames, allClients, activeClientIdsSet, invoiceMatchingClientIdsSet]);
 
   // Consumo específico del cliente seleccionado
   const currentConsumption = useMemo(() => {
@@ -4887,7 +4905,9 @@ ${rows.map(r=>{
     const sizeDistM2: Record<string, number> = {};
     const clientDist: Record<number, number> = {};
     const clientDistM2: Record<number, number> = {};
+    const clientRevenue: Record<number, number> = {};
     const salespersonDist: Record<string, { quantity: number, m2: number, revenue: number }> = {};
+    const clientMap = new Map<number, Client>(allClients.map(c => [c.id, c]));
     
     filteredConsumos.forEach(r => {
       const qty = effectiveQty(r);
@@ -4897,7 +4917,12 @@ ${rows.map(r=>{
       clientDist[r.client_id] = (clientDist[r.client_id] || 0) + qty;
       clientDistM2[r.client_id] = parseFloat(((clientDistM2[r.client_id] || 0) + m2).toFixed(2));
       
-      const client = allClients.find(c => c.id === r.client_id);
+      const spPrice = (r.sale_price !== null && r.sale_price !== undefined) ? r.sale_price : (r.unit_cost || 0);
+      if (!r.is_return) {
+        clientRevenue[r.client_id] = (clientRevenue[r.client_id] || 0) + (r.quantity * spPrice);
+      }
+
+      const client = clientMap.get(r.client_id);
       const salesperson = (client?.salesperson || 'Sin Vendedor').toUpperCase().trim();
       
       if (!salespersonDist[salesperson]) {
@@ -4905,7 +4930,6 @@ ${rows.map(r=>{
       }
       salespersonDist[salesperson].quantity += qty;
       salespersonDist[salesperson].m2 = parseFloat((salespersonDist[salesperson].m2 + m2).toFixed(2));
-      const spPrice = (r.sale_price !== null && r.sale_price !== undefined) ? r.sale_price : (r.unit_cost || 0);
       salespersonDist[salesperson].revenue += qty * spPrice;
     });
 
@@ -4913,16 +4937,7 @@ ${rows.map(r=>{
     const allClientsSorted = Object.entries(baseClientsMap)
       .map(([id, val]) => {
         const cId = parseInt(id);
-        const c = allClients.find(c => c.id === cId);
-        // Use filteredConsumos for category-specific revenue
-        const revenueConsumos = filteredConsumos.filter(r => {
-          if (r.client_id !== cId || r.is_return) return false;
-          return true;
-        });
-        const revenue = revenueConsumos.reduce((s, r) => {
-          const price = (r.sale_price !== null && r.sale_price !== undefined) ? r.sale_price : (r.unit_cost || 0);
-          return s + r.quantity * price;
-        }, 0);
+        const c = clientMap.get(cId);
         return {
           id: cId,
           name: c?.name || 'Desconocido',
@@ -4930,7 +4945,7 @@ ${rows.map(r=>{
           salesperson: c?.salesperson || '—',
           value: clientDist[cId] || 0,
           m2: (activeCategory === 'PELICULAS' || activeCategory === 'ALL') ? (clientDistM2[cId] || 0) : 0,
-          revenue: parseFloat(revenue.toFixed(2))
+          revenue: parseFloat((clientRevenue[cId] || 0).toFixed(2))
         };
       })
       .sort((a, b) => (activeCategory === 'PELICULAS' || activeCategory === 'ALL') ? b.m2 - a.m2 : b.revenue - a.revenue);
@@ -4978,45 +4993,67 @@ ${rows.map(r=>{
     const todayFacturas = new Set(todayConsumos.map(r => r.invoice_number).filter(Boolean)).size;
     const todayClientes = new Set(todayConsumos.map(r => r.client_id)).size;
 
-    // Clientes en riesgo (sin compra últimos 60 días)
+    // Clientes en riesgo (sin compra últimos 60 días) - Single pass
+    const lastOrderDateByClient: Record<number, string> = {};
+    for (let i = 0; i < activeCategoryConsumos.length; i++) {
+      const r = activeCategoryConsumos[i];
+      if (r.is_return || !r.order_date) continue;
+      const prev = lastOrderDateByClient[r.client_id];
+      if (!prev || r.order_date > prev) {
+        lastOrderDateByClient[r.client_id] = r.order_date;
+      }
+    }
     const cutoff60 = new Date(today); cutoff60.setDate(cutoff60.getDate() - 60);
     const clientesEnRiesgo = allClients.filter(c => {
-      const consumos = activeCategoryConsumos.filter(r => r.client_id === c.id && !r.is_return);
-      if (!consumos.length) return false;
-      const last = new Date(consumos.slice().sort((a,b) => new Date(b.order_date).getTime() - new Date(a.order_date).getTime())[0].order_date);
-      return last < cutoff60;
+      const lastStr = lastOrderDateByClient[c.id];
+      if (!lastStr) return false;
+      return new Date(lastStr) < cutoff60;
     }).length;
 
-    // Stock bajo: productos DIHT con cobertura < 2 meses
+    // Stock bajo: productos DIHT/DIHL con cobertura < 2 meses - Single pass map
+    const cy = new Date().getFullYear();
+    const cm = new Date().getMonth();
+    const monthlyOutMap: Record<string, number> = {};
+    const totalOutMap: Record<string, number> = {};
+
+    for (let i = 0; i < activeCategoryConsumos.length; i++) {
+      const r = activeCategoryConsumos[i];
+      if (r.is_return) continue;
+      const rft = (!r.film_type || r.film_type === 'DIHT') ? 'DIHT' : r.film_type === 'DIHL' ? 'DIHL' : null;
+      if (!rft) continue;
+
+      const totalKey = `${rft}_${r.size}`;
+      totalOutMap[totalKey] = (totalOutMap[totalKey] || 0) + r.quantity;
+
+      if (r.order_date) {
+        const rd = new Date(r.order_date);
+        if (rd.getFullYear() === cy && rd.getMonth() <= cm) {
+          const key = `${cy}_${rd.getMonth()}_${rft}_${r.size}`;
+          monthlyOutMap[key] = (monthlyOutMap[key] || 0) + r.quantity;
+        }
+      }
+    }
+
     const FUJI_SIZES: Array<{ft:'DIHT'|'DIHL', size:string}> = [
       {ft:'DIHT',size:'8x10'},{ft:'DIHT',size:'10x12'},{ft:'DIHT',size:'10x14'},{ft:'DIHT',size:'14x17'},
       {ft:'DIHL',size:'8x10'},{ft:'DIHL',size:'10x14'},{ft:'DIHL',size:'14x17'},
     ];
     let stockBajo = 0;
     FUJI_SIZES.forEach(({ft, size}) => {
-      const consumosFt = activeCategoryConsumos.filter(r => {
-        const rft = (!r.film_type || r.film_type === 'DIHT') ? 'DIHT' : r.film_type === 'DIHL' ? 'DIHL' : null;
-        return rft === ft && r.size === size && !r.is_return;
-      });
-      if (!consumosFt.length) return;
-      const avgMonthly = consumosFt.reduce((s,r) => s + r.quantity, 0) / 12;
+      const totalOut = totalOutMap[`${ft}_${size}`] || 0;
+      if (totalOut <= 0) return;
+      const avgMonthly = totalOut / 12;
       if (avgMonthly <= 0) return;
-      // Find current bodega stock from stockFilmData
+
       const prod = STOCK_FILM_PRODUCTS.find(p => p.type === ft && p.size === size);
       if (!prod) return;
-      const cy = new Date().getFullYear();
-      const cm = new Date().getMonth();
       const yd = stockFilmData[String(cy)]?.[prod.key];
       if (!yd) return;
       let running = yd.openingBoxes || 0;
       STOCK_FILM_MONTHS.forEach((month, mi) => {
         if (mi > cm) return;
-        running = running + (yd.months?.[month]?.inBoxes || 0) - activeCategoryConsumos.reduce((s, r) => {
-          const rd = new Date(r.order_date);
-          const rft2 = (!r.film_type || r.film_type === 'DIHT') ? 'DIHT' : r.film_type === 'DIHL' ? 'DIHL' : null;
-          if (rd.getFullYear() !== cy || rd.getMonth() !== mi || r.size !== size || rft2 !== ft) return s;
-          return s + (r.is_return ? -r.quantity : r.quantity);
-        }, 0);
+        const out = monthlyOutMap[`${cy}_${mi}_${ft}_${size}`] || 0;
+        running = running + (yd.months?.[month]?.inBoxes || 0) - out;
       });
       const currentStock = Math.max(0, running);
       if (currentStock / avgMonthly < 2) stockBajo++;
@@ -5028,6 +5065,41 @@ ${rows.map(r=>{
 
     return { todayM2, todayFacturas, todayClientes, clientesEnRiesgo, stockBajo, greeting, todayStr };
   }, [activeCategoryConsumos, allClients, stockFilmData]);
+
+  const productDistributionChartData = useMemo(() => {
+    const filtered = globalFilmFilter === 'all' ? activeCategoryConsumos
+      : activeCategoryConsumos.filter(r => r.film_type === globalFilmFilter);
+    const dated = filtered.filter(r => {
+      const d = new Date(r.order_date);
+      if (dashboardStartDate && d < new Date(dashboardStartDate)) return false;
+      if (dashboardEndDate && d > new Date(dashboardEndDate)) return false;
+      return true;
+    });
+    if (activeCategory === 'PELICULAS' || activeCategory === 'ALL') {
+      const distM2 = {} as Record<string, number>;
+      const distBoxes = {} as Record<string, number>;
+      dated.forEach(r => {
+        const m2 = getTotalM2(r.quantity, r.size, r.film_type);
+        distM2[r.size] = parseFloat(((distM2[r.size] || 0) + m2).toFixed(2));
+        distBoxes[r.size] = (distBoxes[r.size] || 0) + r.quantity;
+      });
+      return Object.entries(distM2).map(([name, m2]) => ({ name, m2, cajas: distBoxes[name] || 0 })).sort((a,b) => b.m2 - a.m2);
+    } else {
+      const distRevenue = {} as Record<string, number>;
+      const distQty = {} as Record<string, number>;
+      dated.forEach(r => {
+        const price = (r.sale_price !== null && r.sale_price !== undefined) ? r.sale_price : (r.unit_cost || 0);
+        const rev = r.quantity * price;
+        const name = r.size || 'Varios';
+        distRevenue[name] = parseFloat(((distRevenue[name] || 0) + rev).toFixed(2));
+        distQty[name] = (distQty[name] || 0) + r.quantity;
+      });
+      return Object.entries(distRevenue)
+        .map(([name, revenue]) => ({ name, revenue, quantity: distQty[name] || 0 }))
+        .sort((a,b) => b.revenue - a.revenue)
+        .slice(0, 10);
+    }
+  }, [activeCategoryConsumos, globalFilmFilter, dashboardStartDate, dashboardEndDate, activeCategory]);
 
   // ── FILTERED CONSUMOS for Inventory & Intelligence (by globalFilmFilter) ──
   const filteredConsumosForView = useMemo(() => {
@@ -7733,40 +7805,7 @@ ${rows.map(r=>{
                 </div>
                 <div className="h-72 min-w-0">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={(() => {
-                      const filtered = globalFilmFilter === 'all' ? activeCategoryConsumos
-                        : activeCategoryConsumos.filter(r => r.film_type === globalFilmFilter);
-                      const dated = filtered.filter(r => {
-                        const d = new Date(r.order_date);
-                        if (dashboardStartDate && d < new Date(dashboardStartDate)) return false;
-                        if (dashboardEndDate && d > new Date(dashboardEndDate)) return false;
-                        return true;
-                      });
-                      if (activeCategory === 'PELICULAS' || activeCategory === 'ALL') {
-                        const distM2 = {} as Record<string, number>;
-                        const distBoxes = {} as Record<string, number>;
-                        dated.forEach(r => {
-                          const m2 = getTotalM2(r.quantity, r.size, r.film_type);
-                          distM2[r.size] = parseFloat(((distM2[r.size] || 0) + m2).toFixed(2));
-                          distBoxes[r.size] = (distBoxes[r.size] || 0) + r.quantity;
-                        });
-                        return Object.entries(distM2).map(([name, m2]) => ({ name, m2, cajas: distBoxes[name] || 0 })).sort((a,b) => b.m2 - a.m2);
-                      } else {
-                        const distRevenue = {} as Record<string, number>;
-                        const distQty = {} as Record<string, number>;
-                        dated.forEach(r => {
-                          const price = (r.sale_price !== null && r.sale_price !== undefined) ? r.sale_price : (r.unit_cost || 0);
-                          const rev = r.quantity * price;
-                          const name = r.size || 'Varios';
-                          distRevenue[name] = parseFloat(((distRevenue[name] || 0) + rev).toFixed(2));
-                          distQty[name] = (distQty[name] || 0) + r.quantity;
-                        });
-                        return Object.entries(distRevenue)
-                          .map(([name, revenue]) => ({ name, revenue, quantity: distQty[name] || 0 }))
-                          .sort((a,b) => b.revenue - a.revenue)
-                          .slice(0, 10);
-                      }
-                    })()}>
+                    <BarChart data={productDistributionChartData}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={darkMode ? "#222" : "#F0F0F0"} />
                       <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: '600', fill: darkMode ? '#666' : '#888'}} />
                       <YAxis
