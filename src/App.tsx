@@ -2611,7 +2611,7 @@ function App() {
     topClients: [string, number][];
     fujiOrders: string[];
   }>(null);
-  const [bannerCollapsed, setBannerCollapsed] = useState(false);
+  const [bannerCollapsed, setBannerCollapsed] = useState(true);
   const [exportingPdf, setExportingPdf] = useState(false);
 
   const saveStockFilmData = (data: typeof stockFilmData) => {
