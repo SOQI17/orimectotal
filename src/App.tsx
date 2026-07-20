@@ -3223,220 +3223,280 @@ function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setCsvImportStatus('importing');
+    setCsvImportProgress(0);
+
     const processText = (text: string) => {
-      try {
-      // Strip BOM if present
-      const clean = text.replace(/^\uFEFF/, '');
-      const allRows = parseCSV(clean);
-      if (!allRows.length) { setCsvImportError('El archivo no tiene filas válidas o el separador no fue reconocido. Columnas detectadas: ' + (Object.keys(allRows[0] ?? {}).join(', ') || 'ninguna')); setCsvImportStatus('error'); return; }
+      setTimeout(() => {
+        try {
+          // Strip BOM if present
+          const clean = text.replace(/^\uFEFF/, '');
+          const allRows = parseCSV(clean);
+          if (!allRows.length) {
+            setCsvImportError('El archivo no tiene filas válidas o el separador no fue reconocido. Columnas detectadas: ' + (Object.keys(allRows[0] ?? {}).join(', ') || 'ninguna'));
+            setCsvImportStatus('error');
+            return;
+          }
 
-      // ── No filtrar por película, importar todas las categorías ──────
-      const rows = allRows;
-      setCsvPreviewRows(rows.slice(0, 5));
+          const rows = allRows;
+          setCsvPreviewRows(rows.slice(0, 5));
 
-      const matched: { row: any; clientName: string }[] = [];
-      const toCreate: { row: any; clientName: string; province: string; clientCode: string; salesperson: string }[] = [];
-      const duplicates: any[] = [];
-      // Track codes already resolved to EXISTING clients (so same code doesn't appear as new client)
-      const resolvedCodes = new Map<string, string>(); // normCode → clientName (existing)
-      // Track new clients being created in this CSV
-      const newClientByCode = new Map<string, string>(); // normCode → canonicalName
-      const newClientByName = new Map<string, string>(); // normName → canonicalName
+          // ── Create high-performance lookup maps for O(1) matching ──
+          const clientsByCode = new Map<string, Client>();
+          const clientsByRuc = new Map<string, Client>();
+          const clientsByName = new Map<string, Client>();
 
-      rows.forEach(row => {
-        const info = extractClientInfoFromRow(row);
-        const codeValNorm = normCode(info.clientCode);
-
-        // If this code was already resolved to an existing client, use that client directly
-        if (codeValNorm && resolvedCodes.has(codeValNorm)) {
-          const clientName = resolvedCodes.get(codeValNorm)!;
-          const client = allClients.find(c => c.name === clientName)!;
-          const tempRecord = mapRowToRecord(row, client.id, 0);
-          const isDup = isExistingRecord(tempRecord, client.id);
-          if (isDup) {
-            const existingRec = allConsumos.find(r => {
-              if (r.invoice_number && tempRecord.invoice_number) {
-                const invMatch = normInvoice(r.invoice_number) === normInvoice(tempRecord.invoice_number);
-                if (invMatch && r.size === tempRecord.size && Math.abs(r.quantity) === Math.abs(tempRecord.quantity)) return true;
-                if (normInvoice(r.invoice_number) !== normInvoice(tempRecord.invoice_number)) return false;
-              }
-              if (r.client_id === client.id &&
-                  r.order_date === tempRecord.order_date &&
-                  r.size === tempRecord.size &&
-                  Math.abs(r.quantity) === Math.abs(tempRecord.quantity)) {
-                if (r.invoice_number && tempRecord.invoice_number && normInvoice(r.invoice_number) !== normInvoice(tempRecord.invoice_number)) return false;
-                return true;
-              }
-              return false;
+          allClients.forEach(c => {
+            const cCode = normCode(c.client_code);
+            if (cCode) clientsByCode.set(cCode, c);
+            (c.alt_codes || []).forEach(ac => {
+              const acCode = normCode(ac);
+              if (acCode) clientsByCode.set(acCode, c);
             });
-            if (existingRec) {
-              const hasDiff = 
-                (tempRecord.unit_cost !== undefined && tempRecord.unit_cost !== existingRec.unit_cost) ||
-                (tempRecord.batch_number !== '' && tempRecord.batch_number !== existingRec.batch_number) ||
-                (tempRecord.expiry_date !== '2099-12-31' && tempRecord.expiry_date !== existingRec.expiry_date) ||
-                (tempRecord.film_type !== undefined && tempRecord.film_type !== existingRec.film_type) ||
-                (tempRecord.order_date !== existingRec.order_date);
-              if (hasDiff) {
-                matched.push({ row, clientName, _updateId: existingRec.id } as any);
+
+            const cRuc = normRuc(c.ruc_id);
+            if (cRuc) clientsByRuc.set(cRuc, c);
+
+            const cName = cleanClientNameForMatching(c.name);
+            if (cName) clientsByName.set(cName, c);
+
+            const altN = cleanClientNameForMatching(altNames[c.id] || '');
+            if (altN) clientsByName.set(altN, c);
+          });
+
+          const consumosByInvoiceKey = new Map<string, ConsumptionRecord>();
+          const consumosByClientKey = new Map<string, ConsumptionRecord>();
+
+          allConsumos.forEach(r => {
+            if (r.invoice_number) {
+              const invKey = `${normInvoice(r.invoice_number)}|${r.size}|${Math.abs(r.quantity)}`;
+              if (!consumosByInvoiceKey.has(invKey)) consumosByInvoiceKey.set(invKey, r);
+            }
+            if (r.client_id > 0) {
+              const clientKey = `${r.client_id}|${r.order_date}|${r.size}|${Math.abs(r.quantity)}`;
+              if (!consumosByClientKey.has(clientKey)) consumosByClientKey.set(clientKey, r);
+            }
+          });
+
+          const findClientForRowFast = (row: any): Client | null => {
+            const rowKeys = Object.keys(row);
+            const clientNameCols = ['cliente', 'client', 'nombrecliente', 'razonsocial', 'name', 'nombre'];
+            const rucCols = ['ruc', 'rucid', 'cedula', 'identificacion'];
+            const codeCols = ['codcliente', 'codigo2', 'codigocliente', 'clientcode', 'cod', 'codigo'];
+
+            let clientNameVal = '';
+            let rucVal = '';
+            let codeVal = '';
+
+            rowKeys.forEach(k => {
+              const kh = normHeader(k);
+              if (!codeVal) {
+                if (codeCols.some(c => kh === normHeader(c))) codeVal = String(row[k]);
+                else if (codeCols.some(c => kh.includes(normHeader(c)))) codeVal = String(row[k]);
+              }
+              if (!rucVal && rucCols.some(c => kh === normHeader(c))) rucVal = String(row[k]);
+              if (!clientNameVal && clientNameCols.some(c => kh === normHeader(c) || kh.includes(normHeader(c)))) clientNameVal = String(row[k]);
+            });
+
+            if (codeVal) {
+              const targetCode = normCode(codeVal);
+              if (targetCode && clientsByCode.has(targetCode)) return clientsByCode.get(targetCode)!;
+            }
+            if (rucVal) {
+              const targetRuc = normRuc(rucVal);
+              if (targetRuc && clientsByRuc.has(targetRuc)) return clientsByRuc.get(targetRuc)!;
+            }
+            if (clientNameVal) {
+              const cleanedVal = cleanClientNameForMatching(clientNameVal);
+              if (cleanedVal && clientsByName.has(cleanedVal)) return clientsByName.get(cleanedVal)!;
+            }
+            if (clientNameVal) {
+              const cleanedVal = cleanClientNameForMatching(clientNameVal);
+              if (cleanedVal) {
+                const found = allClients.find(c => {
+                  const dbCleaned = cleanClientNameForMatching(c.name);
+                  const altCleaned = cleanClientNameForMatching(altNames[c.id] || '');
+                  return (dbCleaned && (dbCleaned.includes(cleanedVal) || cleanedVal.includes(dbCleaned))) ||
+                    (altCleaned && (altCleaned.includes(cleanedVal) || cleanedVal.includes(altCleaned)));
+                });
+                if (found) return found;
+              }
+            }
+            return null;
+          };
+
+          const getExistingRecordFast = (tempRec: any, clientId: number): ConsumptionRecord | undefined => {
+            if (tempRec.invoice_number) {
+              const invKey = `${normInvoice(tempRec.invoice_number)}|${tempRec.size}|${Math.abs(tempRec.quantity)}`;
+              const found = consumosByInvoiceKey.get(invKey);
+              if (found) return found;
+            }
+            if (clientId > 0) {
+              const clientKey = `${clientId}|${tempRec.order_date}|${tempRec.size}|${Math.abs(tempRec.quantity)}`;
+              const found = consumosByClientKey.get(clientKey);
+              if (found) {
+                if (!found.invoice_number || !tempRec.invoice_number || normInvoice(found.invoice_number) === normInvoice(tempRec.invoice_number)) {
+                  return found;
+                }
+              }
+            }
+            return undefined;
+          };
+
+          const matched: { row: any; clientName: string }[] = [];
+          const toCreate: { row: any; clientName: string; province: string; clientCode: string; salesperson: string }[] = [];
+          const duplicates: any[] = [];
+          const resolvedCodes = new Map<string, string>();
+          const newClientByCode = new Map<string, string>();
+          const newClientByName = new Map<string, string>();
+
+          rows.forEach(row => {
+            const info = extractClientInfoFromRow(row);
+            const codeValNorm = normCode(info.clientCode);
+
+            if (codeValNorm && resolvedCodes.has(codeValNorm)) {
+              const clientName = resolvedCodes.get(codeValNorm)!;
+              const client = clientsByName.get(cleanClientNameForMatching(clientName)) || allClients.find(c => c.name === clientName)!;
+              const tempRecord = mapRowToRecord(row, client.id, 0);
+              const existingRec = getExistingRecordFast(tempRecord, client.id);
+              if (existingRec) {
+                const hasDiff = 
+                  (tempRecord.unit_cost !== undefined && tempRecord.unit_cost !== existingRec.unit_cost) ||
+                  (tempRecord.batch_number !== '' && tempRecord.batch_number !== existingRec.batch_number) ||
+                  (tempRecord.expiry_date !== '2099-12-31' && tempRecord.expiry_date !== existingRec.expiry_date) ||
+                  (tempRecord.film_type !== undefined && tempRecord.film_type !== existingRec.film_type) ||
+                  (tempRecord.order_date !== existingRec.order_date);
+                if (hasDiff) {
+                  matched.push({ row, clientName, _updateId: existingRec.id } as any);
+                } else {
+                  duplicates.push({ row, clientName });
+                }
               } else {
-                duplicates.push({ row, clientName });
+                matched.push({ row, clientName });
+              }
+              return;
+            }
+
+            const client = findClientForRowFast(row);
+            if (!client) {
+              const normName = cleanClientNameForMatching(info.name);
+              if (!normName || normName === 'SIN NOMBRE') return;
+
+              let canonical: string | undefined;
+              if (codeValNorm) canonical = newClientByCode.get(codeValNorm);
+              if (!canonical) canonical = newClientByName.get(normName);
+
+              if (!canonical) {
+                canonical = info.name;
+                if (codeValNorm) newClientByCode.set(codeValNorm, canonical);
+                newClientByName.set(normName, canonical);
+              }
+
+              toCreate.push({ row, clientName: canonical, province: info.province, clientCode: info.clientCode, salesperson: info.salesperson });
+              return;
+            }
+
+            const existingClientCodeNorm = normCode(client.client_code) || codeValNorm;
+            if (existingClientCodeNorm) resolvedCodes.set(existingClientCodeNorm, client.name);
+
+            const tempRecord2 = mapRowToRecord(row, client.id, 0);
+            const existingRec2 = getExistingRecordFast(tempRecord2, client.id);
+            if (existingRec2) {
+              const hasDiff2 = 
+                (tempRecord2.unit_cost !== undefined && tempRecord2.unit_cost !== existingRec2.unit_cost) ||
+                (tempRecord2.batch_number !== '' && tempRecord2.batch_number !== existingRec2.batch_number) ||
+                (tempRecord2.expiry_date !== '2099-12-31' && tempRecord2.expiry_date !== existingRec2.expiry_date) ||
+                (tempRecord2.film_type !== undefined && tempRecord2.film_type !== existingRec2.film_type) ||
+                (tempRecord2.order_date !== existingRec2.order_date);
+              if (hasDiff2) {
+                matched.push({ row, clientName: client.name, _updateId: existingRec2.id } as any);
+              } else {
+                duplicates.push({ row, clientName: client.name });
               }
             } else {
-              duplicates.push({ row, clientName });
+              matched.push({ row, clientName: client.name });
             }
-          }
-          else matched.push({ row, clientName });
-          return;
-        }
-
-        const client = findClientForRow(row);
-        if (!client) {
-          const normName = cleanClientNameForMatching(info.name);
-          if (!normName || normName === 'SIN NOMBRE') return;
-
-          let canonical: string | undefined;
-          if (codeValNorm) canonical = newClientByCode.get(codeValNorm);
-          if (!canonical) canonical = newClientByName.get(normName);
-
-          if (!canonical) {
-            canonical = info.name;
-            if (codeValNorm) newClientByCode.set(codeValNorm, canonical);
-            newClientByName.set(normName, canonical);
-          }
-
-          toCreate.push({ row, clientName: canonical, province: info.province, clientCode: info.clientCode, salesperson: info.salesperson });
-          return;
-        }
-
-        // Existing client found — register their code so subsequent rows with same code find them
-        const existingClientCodeNorm = normCode(client.client_code) || codeValNorm;
-        if (existingClientCodeNorm) resolvedCodes.set(existingClientCodeNorm, client.name);
-
-        const tempRecord2 = mapRowToRecord(row, client.id, 0);
-        const isDup2 = isExistingRecord(tempRecord2, client.id);
-        if (isDup2) {
-          const existingRec2 = allConsumos.find(r => {
-            if (r.invoice_number && tempRecord2.invoice_number) {
-              const invMatch = normInvoice(r.invoice_number) === normInvoice(tempRecord2.invoice_number);
-              if (invMatch && r.size === tempRecord2.size && Math.abs(r.quantity) === Math.abs(tempRecord2.quantity)) return true;
-              if (normInvoice(r.invoice_number) !== normInvoice(tempRecord2.invoice_number)) return false;
-            }
-            if (r.client_id === client.id &&
-                r.order_date === tempRecord2.order_date &&
-                r.size === tempRecord2.size &&
-                Math.abs(r.quantity) === Math.abs(tempRecord2.quantity)) {
-              if (r.invoice_number && tempRecord2.invoice_number && normInvoice(r.invoice_number) !== normInvoice(tempRecord2.invoice_number)) return false;
-              return true;
-            }
-            return false;
           });
-          if (existingRec2) {
-            const hasDiff2 = 
-              (tempRecord2.unit_cost !== undefined && tempRecord2.unit_cost !== existingRec2.unit_cost) ||
-              (tempRecord2.batch_number !== '' && tempRecord2.batch_number !== existingRec2.batch_number) ||
-              (tempRecord2.expiry_date !== '2099-12-31' && tempRecord2.expiry_date !== existingRec2.expiry_date) ||
-              (tempRecord2.film_type !== undefined && tempRecord2.film_type !== existingRec2.film_type) ||
-              (tempRecord2.order_date !== existingRec2.order_date);
-            if (hasDiff2) {
-              matched.push({ row, clientName: client.name, _updateId: existingRec2.id } as any);
-            } else {
-              duplicates.push({ row, clientName: client.name });
-            }
+
+          // Detect if this is a DIHL-only import
+          const isDihlOnly = rows.length > 0 && rows.every((row: any) => {
+            const art = String(row['ARTICULO'] || row['articulo'] || row['Articulo'] || '').toUpperCase();
+            return art.includes('DI-HL') || art.includes('DIHL');
+          });
+
+          if (isDihlOnly) {
+            const rescuedFromDuplicates: any[] = [];
+            const trueDuplicates: any[] = [];
+            duplicates.forEach(item => {
+              const temp = mapRowToRecord(item.row, 0, 0);
+              const existingForRescue = getExistingRecordFast(temp, 0);
+              if (existingForRescue && existingForRescue.film_type !== 'DIHL') {
+                rescuedFromDuplicates.push({ row: item.row, clientName: item.clientName, _replaceId: existingForRescue.id });
+              } else {
+                trueDuplicates.push(item);
+              }
+            });
+
+            const reMatched: any[] = [];
+            const stillNew: any[] = [];
+            toCreate.forEach(item => {
+              const temp = mapRowToRecord(item.row, 0, 0);
+              const existingForNew = getExistingRecordFast(temp, 0);
+              if (existingForNew && existingForNew.film_type === 'DIHL') {
+                const hasDiff = 
+                  (temp.unit_cost !== undefined && temp.unit_cost !== existingForNew.unit_cost) ||
+                  (temp.batch_number !== '' && temp.batch_number !== existingForNew.batch_number) ||
+                  (temp.expiry_date !== '2099-12-31' && temp.expiry_date !== existingForNew.expiry_date) ||
+                  (temp.order_date !== existingForNew.order_date);
+                if (hasDiff) {
+                  reMatched.push({ row: item.row, clientName: item.clientName, _updateId: existingForNew.id });
+                } else {
+                  trueDuplicates.push({ row: item.row, clientName: item.clientName });
+                }
+              } else if (existingForNew && existingForNew.film_type !== 'DIHL') {
+                reMatched.push({ row: item.row, clientName: item.clientName, _replaceId: existingForNew.id });
+              } else {
+                stillNew.push(item);
+              }
+            });
+
+            const finalMatched: any[] = [];
+            matched.forEach(item => {
+              if ((item as any)._updateId) { finalMatched.push(item); return; }
+              const temp = mapRowToRecord(item.row, 0, 0);
+              const existingFinal = getExistingRecordFast(temp, 0);
+              if (existingFinal && existingFinal.film_type === 'DIHL') {
+                const hasDiff = 
+                  (temp.unit_cost !== undefined && temp.unit_cost !== existingFinal.unit_cost) ||
+                  (temp.batch_number !== '' && temp.batch_number !== existingFinal.batch_number) ||
+                  (temp.expiry_date !== '2099-12-31' && temp.expiry_date !== existingFinal.expiry_date) ||
+                  (temp.order_date !== existingFinal.order_date);
+                if (hasDiff) {
+                  finalMatched.push({ ...item, _updateId: existingFinal.id });
+                } else {
+                  trueDuplicates.push({ row: item.row, clientName: item.clientName });
+                }
+              } else if (existingFinal && existingFinal.film_type !== 'DIHL') {
+                finalMatched.push({ ...item, _replaceId: existingFinal.id });
+              } else {
+                finalMatched.push(item);
+              }
+            });
+
+            const allMatched = [...finalMatched, ...reMatched, ...rescuedFromDuplicates];
+            const replaceCount = allMatched.filter((x: any) => x._replaceId).length;
+            setCsvImportResults({ matched: allMatched, toCreate: stillNew, duplicates: trueDuplicates, isDihlOnly, replaceCount });
           } else {
-            duplicates.push({ row, clientName: client.name });
+            setCsvImportResults({ matched, toCreate, duplicates, isDihlOnly: false });
           }
-        } else { matched.push({ row, clientName: client.name }); }
-      });
-
-      // Detect if this is a DIHL-only import (all rows have DI-HL in ARTICULO)
-      const isDihlOnly = rows.length > 0 && rows.every((row: any) => {
-        const art = String(row['ARTICULO'] || row['articulo'] || row['Articulo'] || '').toUpperCase();
-        return art.includes('DI-HL') || art.includes('DIHL');
-      });
-
-      // In DIHL-only mode: toCreate rows should be treated as film_type updates only, not new clients
-      // Move all toCreate into matched as _updateId = -1 (meaning: find by invoice+size+qty and update)
-      if (isDihlOnly) {
-        // In DIHL mode: rescue any "duplicates" that are actually DIHT records → they should be replaced
-        const rescuedFromDuplicates: any[] = [];
-        const trueDuplicates: any[] = [];
-        duplicates.forEach(item => {
-          const temp = mapRowToRecord(item.row, 0, 0);
-          const existingForRescue = allConsumos.find(r => r.invoice_number && temp.invoice_number && normInvoice(r.invoice_number) === normInvoice(temp.invoice_number) && r.size === temp.size && Math.abs(r.quantity) === Math.abs(temp.quantity));
-          if (existingForRescue && existingForRescue.film_type !== 'DIHL') {
-            // Was incorrectly classified as duplicate — it's a DIHT to replace
-            rescuedFromDuplicates.push({ row: item.row, clientName: item.clientName, _replaceId: existingForRescue.id });
-          } else {
-            trueDuplicates.push(item);
-          }
-        });
-
-        // Re-check toCreate rows against allConsumos by invoice+size+qty regardless of client
-        const reMatched: any[] = [];
-        const stillNew: any[] = [];
-        toCreate.forEach(item => {
-          const temp = mapRowToRecord(item.row, 0, 0);
-          const existingForNew = allConsumos.find(r => r.invoice_number && temp.invoice_number && normInvoice(r.invoice_number) === normInvoice(temp.invoice_number) && r.size === temp.size && Math.abs(r.quantity) === Math.abs(temp.quantity));
-          if (existingForNew && existingForNew.film_type === 'DIHL') {
-            const hasDiff = 
-              (temp.unit_cost !== undefined && temp.unit_cost !== existingForNew.unit_cost) ||
-              (temp.batch_number !== '' && temp.batch_number !== existingForNew.batch_number) ||
-              (temp.expiry_date !== '2099-12-31' && temp.expiry_date !== existingForNew.expiry_date) ||
-              (temp.order_date !== existingForNew.order_date);
-            if (hasDiff) {
-              reMatched.push({ row: item.row, clientName: item.clientName, _updateId: existingForNew.id });
-            } else {
-              trueDuplicates.push({ row: item.row, clientName: item.clientName });
-            }
-          } else if (existingForNew && existingForNew.film_type !== 'DIHL') {
-            reMatched.push({ row: item.row, clientName: item.clientName, _replaceId: existingForNew.id });
-          } else {
-            stillNew.push(item);
-          }
-        });
-
-        // Re-check matched rows for DIHT replacements
-        const finalMatched: any[] = [];
-        matched.forEach(item => {
-          if ((item as any)._updateId) { finalMatched.push(item); return; }
-          const temp = mapRowToRecord(item.row, 0, 0);
-          const existingFinal = allConsumos.find(r =>
-            r.invoice_number && temp.invoice_number &&
-            normInvoice(r.invoice_number) === normInvoice(temp.invoice_number) &&
-            r.size === temp.size &&
-            Math.abs(r.quantity) === Math.abs(temp.quantity)
-          );
-          if (existingFinal && existingFinal.film_type === 'DIHL') {
-            const hasDiff = 
-              (temp.unit_cost !== undefined && temp.unit_cost !== existingFinal.unit_cost) ||
-              (temp.batch_number !== '' && temp.batch_number !== existingFinal.batch_number) ||
-              (temp.expiry_date !== '2099-12-31' && temp.expiry_date !== existingFinal.expiry_date) ||
-              (temp.order_date !== existingFinal.order_date);
-            if (hasDiff) {
-              finalMatched.push({ ...item, _updateId: existingFinal.id });
-            } else {
-              trueDuplicates.push({ row: item.row, clientName: item.clientName });
-            }
-          } else if (existingFinal && existingFinal.film_type !== 'DIHL') {
-            finalMatched.push({ ...item, _replaceId: existingFinal.id });
-          } else {
-            finalMatched.push(item);
-          }
-        });
-
-        const allMatched = [...finalMatched, ...reMatched, ...rescuedFromDuplicates];
-        const replaceCount = allMatched.filter((x: any) => x._replaceId).length;
-        setCsvImportResults({ matched: allMatched, toCreate: stillNew, duplicates: trueDuplicates, isDihlOnly, replaceCount });
-      } else {
-        setCsvImportResults({ matched, toCreate, duplicates, isDihlOnly: false });
-      }
-      setCsvImportStatus('preview');
-      } catch(err: any) {
-        console.error('CSV processText error:', err);
-        const msg = err?.message || String(err) || 'Error desconocido';
-        setCsvImportError(`Error de procesamiento: ${msg}`);
-        setCsvImportStatus('error');
-      }
+          setCsvImportStatus('preview');
+        } catch(err: any) {
+          console.error('CSV processText error:', err);
+          const msg = err?.message || String(err) || 'Error desconocido';
+          setCsvImportError(`Error de procesamiento: ${msg}`);
+          setCsvImportStatus('error');
+        }
+      }, 50);
     };
 
     // Leer siempre en latin-1 primero (CSVs Windows/Ecuador), fallback a UTF-8
