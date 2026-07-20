@@ -6114,101 +6114,31 @@ ${rows.map(r=>{
             darkMode ? "bg-white/10" : "bg-gray-200"
           )} />
 
-          {/* Global Category Selector */}
-          <div className={cn("flex items-center gap-0.5 p-1 rounded-xl border transition-colors", darkMode ? "bg-white/5 border-white/10" : "bg-gray-100/80 border-gray-200/80")}>
-            <span className={cn("text-[9px] font-black uppercase tracking-wider px-1.5 flex items-center gap-1", darkMode ? "text-gray-500" : "text-gray-400")}>
-              Línea:
-            </span>
-            {([
-              ['PELICULAS', 'Películas'],
-              ['REPUESTOS', 'Repuestos'],
-              ['SERVICIOS', 'Servicios']
-            ] as const).map(([val, label]) => (
+          {/* Main Navigation in Top Header */}
+          <nav className={cn("flex items-center gap-1 p-1 rounded-xl border transition-colors", darkMode ? "bg-white/5 border-white/10" : "bg-gray-100/80 border-gray-200/80")}>
+            {[
+              { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin','financiero','vendedor','asistente','gerencia'] },
+              { id: 'clients', label: 'Clientes', icon: Users, roles: ['admin','financiero','vendedor','asistente','gerencia'] },
+              { id: 'intelligence', label: 'Inteligencia', icon: Brain, roles: ['admin','financiero','gerencia'] },
+              ...(role === 'admin' ? [{ id: 'usuarios', label: 'Usuarios', icon: Shield, roles: ['admin'] }] : []),
+            ].filter(t => t.roles.includes(role || '')).map(({ id, label, icon: Icon }) => (
               <button
-                key={val}
-                onClick={() => {
-                  setActiveCategory(val);
-                  setOtherDropdownOpen(false);
-                }}
+                key={id}
+                onClick={() => setView(id as any)}
                 className={cn(
-                  "px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer",
-                  activeCategory === val
-                    ? val === 'PELICULAS'
-                      ? "bg-[#ED1C24] text-white shadow-sm"
-                      : val === 'REPUESTOS'
-                        ? "bg-blue-600 text-white shadow-sm"
-                        : "bg-purple-600 text-white shadow-sm"
-                    : (darkMode ? "text-gray-400 hover:text-gray-200" : "text-gray-500 hover:text-gray-700")
+                  "px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all cursor-pointer",
+                  view === id
+                    ? "bg-[#ED1C24] text-white shadow-sm shadow-red-500/20 font-extrabold"
+                    : (darkMode
+                        ? "text-gray-400 hover:text-white hover:bg-white/5"
+                        : "text-gray-600 hover:text-gray-900 hover:bg-gray-200/70")
                 )}
               >
-                {label}
+                <Icon className="w-3.5 h-3.5 shrink-0" />
+                <span>{label}</span>
               </button>
             ))}
-            
-            {/* Dropdown for secondary categories */}
-            {(() => {
-              const otherCategories = [
-                { value: 'ACCESORIOS', label: 'Accesorios' },
-                { value: 'ALIANZA', label: 'Alianza' },
-                { value: 'CONTRASTES', label: 'Contrastes' },
-                { value: 'EQUIPOS', label: 'Equipos' },
-                { value: 'INTERESES', label: 'Intereses' },
-                { value: 'MAMOTOME', label: 'Mamotome' },
-                { value: 'MANTENIMIENTO', label: 'Mantenimiento' },
-                { value: 'QUIMICOS', label: 'Químicos' },
-                { value: 'ALL', label: 'Todas' }
-              ];
-              const isOtherActive = otherCategories.some(cat => cat.value === activeCategory);
-              const activeLabel = otherCategories.find(cat => cat.value === activeCategory)?.label || 'Más';
-
-              return (
-                <div className="relative">
-                  <button
-                    onClick={() => setOtherDropdownOpen(o => !o)}
-                    className={cn(
-                      "px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer",
-                      isOtherActive
-                        ? activeCategory === 'ALL'
-                          ? (darkMode ? "bg-white/15 text-white" : "bg-gray-800 text-white shadow-sm")
-                          : (darkMode ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30" : "bg-cyan-50 text-cyan-700 border border-cyan-200 shadow-sm")
-                        : (darkMode ? "text-gray-400 hover:text-gray-200" : "text-gray-500 hover:text-gray-700")
-                    )}
-                  >
-                    <span>{activeLabel}</span>
-                    <ChevronDown className="w-3 h-3 text-gray-400" />
-                  </button>
-
-                  {otherDropdownOpen && (
-                    <>
-                      <div className="fixed inset-0 z-30" onClick={() => setOtherDropdownOpen(false)} />
-                      <div className={cn(
-                        "absolute right-0 mt-1 w-44 rounded-xl border p-1 shadow-xl z-40 flex flex-col gap-0.5",
-                        darkMode ? "bg-[#16161A] border-white/8 text-white" : "bg-white border-gray-200 text-gray-800"
-                      )}>
-                        {otherCategories.map(cat => (
-                          <button
-                            key={cat.value}
-                            onClick={() => {
-                              setActiveCategory(cat.value);
-                              setOtherDropdownOpen(false);
-                            }}
-                            className={cn(
-                              "w-full text-left px-3 py-1.5 rounded-lg text-[10px] font-bold transition-colors cursor-pointer",
-                              activeCategory === cat.value
-                                ? (darkMode ? "bg-cyan-500/10 text-cyan-400" : "bg-cyan-50 text-cyan-600")
-                                : (darkMode ? "hover:bg-white/5 text-gray-300" : "hover:bg-gray-50 text-gray-600")
-                            )}
-                          >
-                            {cat.label}
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              );
-            })()}
-          </div>
+          </nav>
         </div>
 
         <div className="flex items-center gap-1.5 min-w-0">
@@ -6377,39 +6307,65 @@ ${rows.map(r=>{
       </header>
 
       <div className="flex-1 flex min-h-0 overflow-hidden">
-        {/* Banda / Sidebar Navegación Izquierda */}
+        {/* Banda / Sidebar Líneas de Negocio Izquierda */}
         <aside className={cn(
-          "w-48 xl:w-56 border-r flex flex-col justify-between py-5 px-3 shrink-0 transition-colors duration-300 z-10",
+          "w-48 xl:w-56 border-r flex flex-col justify-between py-4 px-2.5 shrink-0 transition-colors duration-300 z-10 overflow-y-auto custom-scrollbar",
           darkMode ? "bg-[#16161A] border-white/8 text-white" : "bg-white border-gray-200/80 shadow-sm text-gray-800"
         )}>
           <div className="flex flex-col gap-1">
-            <p className={cn("text-[9px] font-black uppercase tracking-[0.2em] px-3 py-1.5 mb-1", darkMode ? "text-gray-600" : "text-gray-400")}>
-              Navegación
+            <p className={cn("text-[9px] font-black uppercase tracking-[0.2em] px-2.5 py-1 mb-1 flex items-center justify-between", darkMode ? "text-gray-500" : "text-gray-400")}>
+              <span>Líneas de Negocio</span>
+              <span className="text-[8px] font-bold opacity-60">({[
+                ['PELICULAS', 'Películas', 'bg-[#ED1C24]', 'bg-[#ED1C24] text-white shadow-md shadow-red-500/20'],
+                ['REPUESTOS', 'Repuestos', 'bg-blue-500', 'bg-blue-600 text-white shadow-md'],
+                ['SERVICIOS', 'Servicios', 'bg-purple-500', 'bg-purple-600 text-white shadow-md'],
+                ['ACCESORIOS', 'Accesorios', 'bg-cyan-500', 'bg-cyan-600 text-white shadow-md'],
+                ['EQUIPOS', 'Equipos', 'bg-emerald-500', 'bg-emerald-600 text-white shadow-md'],
+                ['CONTRASTES', 'Contrastes', 'bg-amber-500', 'bg-amber-600 text-white shadow-md'],
+                ['MANTENIMIENTO', 'Mantenimiento', 'bg-orange-500', 'bg-orange-600 text-white shadow-md'],
+                ['QUIMICOS', 'Químicos', 'bg-teal-500', 'bg-teal-600 text-white shadow-md'],
+                ['ALIANZA', 'Alianza', 'bg-indigo-500', 'bg-indigo-600 text-white shadow-md'],
+                ['MAMOTOME', 'Mamotome', 'bg-pink-500', 'bg-pink-600 text-white shadow-md'],
+                ['INTERESES', 'Intereses', 'bg-yellow-500', 'bg-yellow-600 text-white shadow-md'],
+                ['ALL', 'Todas las líneas', 'bg-gray-400', 'bg-gray-800 text-white dark:bg-white/20 shadow-md']
+              ].length})</span>
             </p>
             {[
-              { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin','financiero','vendedor','asistente','gerencia'] },
-              { id: 'clients', label: 'Clientes', icon: Users, roles: ['admin','financiero','vendedor','asistente','gerencia'] },
-              { id: 'intelligence', label: 'Inteligencia', icon: Brain, roles: ['admin','financiero','gerencia'] },
-              ...(role === 'admin' ? [{ id: 'usuarios', label: 'Usuarios', icon: Shield, roles: ['admin'] }] : []),
-            ].filter(t => t.roles.includes(role || '')).map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                onClick={() => setView(id as any)}
-                className={cn(
-                  "w-full px-3.5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-3 transition-all cursor-pointer",
-                  view === id
-                    ? (darkMode
-                        ? "bg-[#ED1C24] text-white shadow-md shadow-red-500/20"
-                        : "bg-[#ED1C24] text-white shadow-md shadow-red-500/15")
-                    : (darkMode
-                        ? "text-gray-400 hover:text-white hover:bg-white/5"
-                        : "text-gray-600 hover:text-gray-900 hover:bg-gray-100/80")
-                )}
-              >
-                <Icon className="w-4 h-4 shrink-0" />
-                <span>{label}</span>
-              </button>
-            ))}
+              ['PELICULAS', 'Películas', 'bg-[#ED1C24]', 'bg-[#ED1C24] text-white shadow-md shadow-red-500/20'],
+              ['REPUESTOS', 'Repuestos', 'bg-blue-500', 'bg-blue-600 text-white shadow-md'],
+              ['SERVICIOS', 'Servicios', 'bg-purple-500', 'bg-purple-600 text-white shadow-md'],
+              ['ACCESORIOS', 'Accesorios', 'bg-cyan-500', 'bg-cyan-600 text-white shadow-md'],
+              ['EQUIPOS', 'Equipos', 'bg-emerald-500', 'bg-emerald-600 text-white shadow-md'],
+              ['CONTRASTES', 'Contrastes', 'bg-amber-500', 'bg-amber-600 text-white shadow-md'],
+              ['MANTENIMIENTO', 'Mantenimiento', 'bg-orange-500', 'bg-orange-600 text-white shadow-md'],
+              ['QUIMICOS', 'Químicos', 'bg-teal-500', 'bg-teal-600 text-white shadow-md'],
+              ['ALIANZA', 'Alianza', 'bg-indigo-500', 'bg-indigo-600 text-white shadow-md'],
+              ['MAMOTOME', 'Mamotome', 'bg-pink-500', 'bg-pink-600 text-white shadow-md'],
+              ['INTERESES', 'Intereses', 'bg-yellow-500', 'bg-yellow-600 text-white shadow-md'],
+              ['ALL', 'Todas las líneas', 'bg-gray-400', 'bg-gray-800 text-white dark:bg-white/20 shadow-md']
+            ].map(([val, label, dotColor, activeBg]) => {
+              const isActive = activeCategory === val;
+              return (
+                <button
+                  key={val}
+                  onClick={() => setActiveCategory(val)}
+                  className={cn(
+                    "w-full px-3 py-2 rounded-xl font-bold text-xs flex items-center justify-between transition-all cursor-pointer",
+                    isActive
+                      ? activeBg
+                      : (darkMode
+                          ? "text-gray-400 hover:text-white hover:bg-white/5"
+                          : "text-gray-600 hover:text-gray-900 hover:bg-gray-100/80")
+                  )}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className={cn("w-2 h-2 rounded-full shrink-0", dotColor)} />
+                    <span className="truncate">{label}</span>
+                  </div>
+                  {isActive && <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-80" />}
+                </button>
+              );
+            })}
           </div>
         </aside>
 
