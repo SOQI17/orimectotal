@@ -3617,6 +3617,9 @@ function App() {
             if (record.batch_number !== undefined && record.batch_number !== '') updateData.batch_number = record.batch_number;
             if (record.expiry_date !== undefined && record.expiry_date !== '2099-12-31') updateData.expiry_date = record.expiry_date;
             if (record.order_date !== undefined) updateData.order_date = record.order_date;
+            if (record.product_code !== undefined) updateData.product_code = record.product_code;
+            if (record.product_name !== undefined) updateData.product_name = record.product_name;
+            if (record.categoria !== undefined) updateData.categoria = record.categoria;
             
             batch.update(doc(db, 'consumos', (_updateId as number).toString()), updateData);
           });
@@ -3760,6 +3763,9 @@ function App() {
           if (record.expiry_date !== undefined && record.expiry_date !== '2099-12-31') updateData.expiry_date = record.expiry_date;
           if (record.film_type !== undefined && record.film_type !== '') updateData.film_type = record.film_type;
           if (record.order_date !== undefined) updateData.order_date = record.order_date;
+          if (record.product_code !== undefined) updateData.product_code = record.product_code;
+          if (record.product_name !== undefined) updateData.product_name = record.product_name;
+          if (record.categoria !== undefined) updateData.categoria = record.categoria;
 
           if (Object.keys(updateData).length > 0) {
             batch.update(doc(db, 'consumos', _updateId.toString()), updateData);
