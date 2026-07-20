@@ -5424,7 +5424,7 @@ ${rows.map(r=>{
       const growthVsLastMonth = lastMonth > 0 ? (((thisMonth - lastMonth) / lastMonth) * 100).toFixed(0) : null;
 
       return { name: spName, quantity, periodM2, totalM2sp, revenue, goal, thisMonth, thisMonthM2, lastMonth, monthlyRevenue, monthlyAvg, monthlyAvgM2, history, progressPct, growthVsLastMonth };
-    }).filter(Boolean).sort((a, b) => (b!.quantity) - (a!.quantity)) as any[];
+    }).filter(Boolean).sort((a, b) => (b!.revenue) - (a!.revenue)) as any[];
   }, [salespersonGoals, allConsumos, allClients, clientsById, dashboardStartDate, dashboardEndDate, globalFilmFilter, view, activeCategory]);
 
   // ── INTELLIGENCE: Client Health Score ────────────────────────────────────
