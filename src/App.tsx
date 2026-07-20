@@ -7050,8 +7050,8 @@ ${rows.map(r=>{
                       darkMode ? "bg-[#16161A] border-white/8" : "bg-white border-gray-200/70 shadow-sm"
                     )}>
                       <h3 className={cn("text-[10px] font-bold uppercase tracking-wider mb-5", darkMode ? "text-gray-500" : "text-gray-400")}>Tendencia de Pedidos</h3>
-                      <div className="h-44 min-w-0">
-                        <ResponsiveContainer width="100%" height="100%">
+                      <div className="h-44 min-w-0" style={{minHeight: 176}}>
+                        <ResponsiveContainer width="100%" height={176}>
                           <LineChart data={filteredClientConsumption.slice(0, 8).reverse()}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={darkMode ? "#222" : "#F0F0F0"} />
                             <XAxis dataKey="order_date" hide />
@@ -7072,8 +7072,8 @@ ${rows.map(r=>{
                       darkMode ? "bg-[#16161A] border-white/8" : "bg-white border-gray-200/70 shadow-sm"
                     )}>
                       <h3 className={cn("text-[10px] font-bold uppercase tracking-wider mb-5", darkMode ? "text-gray-500" : "text-gray-400")}>Stock por Medida (Cajas)</h3>
-                      <div className="h-44 min-w-0">
-                        <ResponsiveContainer width="100%" height="100%">
+                      <div className="h-44 min-w-0" style={{minHeight: 176}}>
+                        <ResponsiveContainer width="100%" height={176}>
                           <BarChart data={sizeDistribution} layout="vertical">
                             <XAxis type="number" hide />
                             <YAxis
@@ -7727,8 +7727,8 @@ ${rows.map(r=>{
                     </div>
                   )}
                 </div>
-                <div className="h-72 min-w-0">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="h-72 min-w-0" style={{minHeight: 288}}>
+                  <ResponsiveContainer width="100%" height={288}>
                     <BarChart data={productDistributionChartData}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={darkMode ? "#222" : "#F0F0F0"} />
                       <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fontSize: 10, fontWeight: '600', fill: darkMode ? '#666' : '#888'}} />
