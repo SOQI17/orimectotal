@@ -16,7 +16,7 @@ import { format, isAfter } from 'date-fns';
 import * as XLSX from 'xlsx';
 import { cn } from './lib/utils';
 import { db } from './firebase';
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, updatePassword, reauthenticateWithCredential, EmailAuthProvider, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { 
   collection, 
   onSnapshot, 
@@ -28,7 +28,8 @@ import {
   getDocs,
   writeBatch,
   updateDoc,
-  getDoc
+  getDoc,
+  where
 } from 'firebase/firestore';
 
 // ── TOAST SYSTEM ─────────────────────────────────────────────────────────────
@@ -356,7 +357,6 @@ function GlobalSearch({ darkMode, allClients, allConsumos, altNames, onSelectCli
             </div>
           )}
         </div>
-
         {/* Footer hint */}
         <div className={cn("px-4 py-2.5 border-t flex items-center gap-4 text-[10px]", darkMode ? "border-white/8 text-gray-700" : "border-gray-100 text-gray-400")}>
           <span><kbd className={cn("font-mono px-1 py-0.5 rounded border text-[9px]", darkMode ? "border-white/10 bg-white/5" : "border-gray-200 bg-gray-50")}>↵</kbd> seleccionar</span>
@@ -366,6 +366,29 @@ function GlobalSearch({ darkMode, allClients, allConsumos, altNames, onSelectCli
     </div>
   );
 }
+const MODULE_PERMISSIONS = [
+  { key: 'dashboard',    label: 'Dashboard',         icon: '📊', desc: 'KPIs, gráficas, vendedores' },
+  { key: 'clients',      label: 'Clientes',           icon: '👤', desc: 'Ficha, historial, impresoras' },
+  { key: 'clients_edit', label: 'Editar Clientes',    icon: '✏️', desc: 'Crear, editar, eliminar clientes' },
+  { key: 'inventory',    label: 'Inventario',         icon: '📦', desc: 'Stock Film, movimientos' },
+  { key: 'inventory_edit', label: 'Editar Inventario', icon: '➕', desc: 'Nueva entrada, modificar stock' },
+  { key: 'imager',       label: 'Imager',             icon: '🖨️', desc: 'Stock equipos Fujifilm' },
+  { key: 'intelligence', label: 'Inteligencia',       icon: '🧠', desc: 'Proyección, salud, análisis' },
+  { key: 'export',       label: 'Exportar',           icon: '📤', desc: 'PDF, Excel, exportaciones' },
+  { key: 'audit',        label: 'Auditoría',          icon: '🔍', desc: 'Ver historial de cambios' },
+] as const;
+
+type PermKey = typeof MODULE_PERMISSIONS[number]['key'];
+
+const DEFAULT_PERMS: Record<UserRole, Record<PermKey, boolean>> = {
+  admin:      { dashboard:true, clients:true, clients_edit:true, inventory:true, inventory_edit:true, imager:true, intelligence:true, export:true, audit:true },
+  gerencia:   { dashboard:true, clients:true, clients_edit:false, inventory:true, inventory_edit:false, imager:true, intelligence:true, export:true, audit:true },
+  financiero: { dashboard:true, clients:true, clients_edit:true, inventory:true, inventory_edit:true, imager:true, intelligence:true, export:true, audit:false },
+  asistente:  { dashboard:true, clients:true, clients_edit:true, inventory:true, inventory_edit:true, imager:false, intelligence:false, export:true, audit:false },
+  vendedor:   { dashboard:true, clients:true, clients_edit:false, inventory:false, inventory_edit:false, imager:false, intelligence:false, export:false, audit:false },
+};
+
+interface UserPerms { [key: string]: boolean }
 
 // ── AUTH TYPES & CONTEXT ─────────────────────────────────────────────────────
 type UserRole = 'admin' | 'financiero' | 'vendedor' | 'asistente' | 'gerencia';
@@ -376,6 +399,7 @@ interface AuthContextType {
   role: UserRole | null;
   authLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
 }
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -391,13 +415,55 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsub = onAuthStateChanged(_auth, async (firebaseUser) => {
       if (firebaseUser) {
         try {
-          const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
+          const userDocRef = doc(db, 'users', firebaseUser.uid);
+          const snap = await getDoc(userDocRef);
           if (snap.exists()) {
             const data = snap.data() as AppUser;
             if (data.activo) { setAppUser(data); }
             else { await signOut(_auth); setAppUser(null); }
-          } else { await signOut(_auth); setAppUser(null); }
-        } catch { setAppUser(null); }
+          } else {
+            // Check if user exists by email in users collection
+            const userEmail = (firebaseUser.email || '').toLowerCase();
+            if (userEmail) {
+              const q = query(collection(db, 'users'), where('email', '==', userEmail));
+              const emailSnap = await getDocs(q);
+              if (!emailSnap.empty) {
+                const existingDoc = emailSnap.docs[0];
+                const existingData = existingDoc.data() as AppUser;
+                if (existingData.activo) {
+                  const updatedUser = { ...existingData, uid: firebaseUser.uid };
+                  await setDoc(userDocRef, updatedUser, { merge: true });
+                  if (existingDoc.id !== firebaseUser.uid) {
+                    await deleteDoc(doc(db, 'users', existingDoc.id));
+                  }
+                  setAppUser(updatedUser);
+                  setAuthLoading(false);
+                  return;
+                } else {
+                  await signOut(_auth);
+                  setAppUser(null);
+                  setAuthLoading(false);
+                  return;
+                }
+              }
+            }
+
+            // Auto-provision new user from Google Login
+            const newUser: AppUser = {
+              uid: firebaseUser.uid,
+              email: (firebaseUser.email || '').toLowerCase(),
+              nombre: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Usuario Google',
+              role: 'vendedor',
+              activo: true
+            };
+            const defaultPerms = { ...DEFAULT_PERMS['vendedor'] };
+            await setDoc(userDocRef, { ...newUser, perms: defaultPerms });
+            setAppUser(newUser);
+          }
+        } catch (e) {
+          console.error("Auth state resolution error:", e);
+          setAppUser(null);
+        }
       } else { setAppUser(null); }
       setAuthLoading(false);
     });
@@ -407,19 +473,24 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (email: string, password: string) => {
     await signInWithEmailAndPassword(_auth, email, password);
   };
+  const loginWithGoogle = async () => {
+    const provider = new GoogleAuthProvider();
+    await signInWithPopup(_auth, provider);
+  };
   const logout = async () => { await signOut(_auth); };
 
-  return <AuthContext.Provider value={{ appUser, role: appUser?.role ?? null, authLoading, login, logout }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ appUser, role: appUser?.role ?? null, authLoading, login, loginWithGoogle, logout }}>{children}</AuthContext.Provider>;
 }
 
 // ── LOGIN PAGE ───────────────────────────────────────────────────────────────
 function LoginPage({ darkMode }: { darkMode: boolean }) {
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [forgotMode, setForgotMode] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetSent, setResetSent] = useState(false);
@@ -436,6 +507,24 @@ function LoginPage({ darkMode }: { darkMode: boolean }) {
       else if (code === 'auth/too-many-requests') setError('Demasiados intentos. Intenta más tarde.');
       else setError('Error al iniciar sesión.');
     } finally { setLoading(false); }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setError(''); setGoogleLoading(true);
+    try {
+      await loginWithGoogle();
+    } catch (err: any) {
+      const code = err?.code;
+      if (code === 'auth/popup-closed-by-user') {
+        // User closed popup without signing in
+      } else if (code === 'auth/popup-blocked') {
+        setError('El navegador bloqueó la ventana emergente de Google. Por favor permítela.');
+      } else {
+        setError('Error al ingresar con Google.');
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
   };
 
   const handleResetPassword = async () => {
@@ -521,6 +610,32 @@ function LoginPage({ darkMode }: { darkMode: boolean }) {
           </div>
         </div>
         <div className="flex flex-col gap-3">
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={googleLoading || loading}
+            className={cn(
+              "w-full py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2.5 transition-all border shadow-sm cursor-pointer",
+              darkMode
+                ? "bg-white/10 hover:bg-white/15 text-white border-white/10"
+                : "bg-white hover:bg-gray-50 text-gray-700 border-gray-200"
+            )}
+          >
+            <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+              <path fill="#FBBC05" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.62z" />
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+            </svg>
+            {googleLoading ? "Conectando con Google..." : "Continuar con Google"}
+          </button>
+
+          <div className="flex items-center gap-3 my-0.5">
+            <div className={cn("flex-1 h-px", darkMode ? "bg-white/10" : "bg-gray-200")} />
+            <span className={cn("text-[9px] uppercase tracking-wider font-semibold", darkMode ? "text-gray-600" : "text-gray-400")}>o con correo</span>
+            <div className={cn("flex-1 h-px", darkMode ? "bg-white/10" : "bg-gray-200")} />
+          </div>
+
           <div>
             <label className={cn("text-[10px] font-semibold uppercase tracking-wider mb-1.5 block", darkMode ? "text-gray-500" : "text-gray-500")}>Correo electrónico</label>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSubmit()} placeholder="usuario@orimec.com" autoComplete="email"
@@ -564,31 +679,6 @@ const ROLE_COLORS: Record<UserRole, string> = {
   gerencia: 'text-amber-500 bg-amber-500/10 border-amber-500/20',
 };
 const ROLE_ICONS: Record<UserRole, React.ElementType> = { admin: Shield, financiero: UserCheck, vendedor: Eye, asistente: Eye, gerencia: BarChart3 };
-
-// ── PERMISSIONS CONFIG ───────────────────────────────────────────────────────
-const MODULE_PERMISSIONS = [
-  { key: 'dashboard',    label: 'Dashboard',         icon: '📊', desc: 'KPIs, gráficas, vendedores' },
-  { key: 'clients',      label: 'Clientes',           icon: '👤', desc: 'Ficha, historial, impresoras' },
-  { key: 'clients_edit', label: 'Editar Clientes',    icon: '✏️', desc: 'Crear, editar, eliminar clientes' },
-  { key: 'inventory',    label: 'Inventario',         icon: '📦', desc: 'Stock Film, movimientos' },
-  { key: 'inventory_edit', label: 'Editar Inventario', icon: '➕', desc: 'Nueva entrada, modificar stock' },
-  { key: 'imager',       label: 'Imager',             icon: '🖨️', desc: 'Stock equipos Fujifilm' },
-  { key: 'intelligence', label: 'Inteligencia',       icon: '🧠', desc: 'Proyección, salud, análisis' },
-  { key: 'export',       label: 'Exportar',           icon: '📤', desc: 'PDF, Excel, exportaciones' },
-  { key: 'audit',        label: 'Auditoría',          icon: '🔍', desc: 'Ver historial de cambios' },
-] as const;
-
-type PermKey = typeof MODULE_PERMISSIONS[number]['key'];
-
-const DEFAULT_PERMS: Record<UserRole, Record<PermKey, boolean>> = {
-  admin:      { dashboard:true, clients:true, clients_edit:true, inventory:true, inventory_edit:true, imager:true, intelligence:true, export:true, audit:true },
-  gerencia:   { dashboard:true, clients:true, clients_edit:false, inventory:true, inventory_edit:false, imager:true, intelligence:true, export:true, audit:true },
-  financiero: { dashboard:true, clients:true, clients_edit:true, inventory:true, inventory_edit:true, imager:true, intelligence:true, export:true, audit:false },
-  asistente:  { dashboard:true, clients:true, clients_edit:true, inventory:true, inventory_edit:true, imager:false, intelligence:false, export:true, audit:false },
-  vendedor:   { dashboard:true, clients:true, clients_edit:false, inventory:false, inventory_edit:false, imager:false, intelligence:false, export:false, audit:false },
-};
-
-interface UserPerms { [key: string]: boolean }
 
 function UsersPanel({ darkMode }: { darkMode: boolean }) {
   const [panelUsers, setPanelUsers] = useState<AppUser[]>([]);
