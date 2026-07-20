@@ -13940,7 +13940,7 @@ ${rows.map(r=>{
           }
         });
         const topClients = Object.entries(clientDist)
-          .map(([id, v]) => ({ name: allClients.find(c => c.id === parseInt(id))?.name || '?', qty: v.qty, m2: v.m2, revenue: v.revenue }))
+          .map(([id, v]) => ({ id: parseInt(id), name: allClients.find(c => c.id === parseInt(id))?.name || '?', qty: v.qty, m2: v.m2, revenue: v.revenue }))
           .sort((a, b) => isFilm ? b.m2 - a.m2 : b.revenue - a.revenue).slice(0, 8);
         const maxMetricTc = isFilm ? (topClients[0]?.m2 || 1) : (topClients[0]?.revenue || 1);
 
@@ -14077,14 +14077,32 @@ ${rows.map(r=>{
                 <div className="grid grid-cols-12 gap-5">
                   {/* Top Clients */}
                   <div className={cn("col-span-6 rounded-xl p-5 border", darkMode ? "bg-white/3 border-white/6" : "bg-gray-50 border-gray-100")}>
-                    <p className={cn("text-[10px] font-bold uppercase tracking-wider mb-4", darkMode ? "text-gray-500" : "text-gray-400")}>
-                      {isFilm ? 'Top clientes por m²' : 'Top clientes por ventas ($)'}
+                    <p className={cn("text-[10px] font-bold uppercase tracking-wider mb-4 flex items-center justify-between", darkMode ? "text-gray-500" : "text-gray-400")}>
+                      <span>{isFilm ? 'Top clientes por m²' : 'Top clientes por ventas ($)'}</span>
+                      <span className="text-[9px] font-normal normal-case text-cyan-400 flex items-center gap-1">(Haz clic para ir al cliente)</span>
                     </p>
                     <div className="space-y-2.5">
                       {topClients.map((c, i) => (
-                        <div key={i}>
+                        <div
+                          key={i}
+                          onClick={() => {
+                            const clientObj = allClients.find(cl => cl.id === c.id);
+                            if (clientObj) {
+                              setSelectedClient(clientObj);
+                              setView('clients');
+                              setSelectedSalesperson(null);
+                            }
+                          }}
+                          className={cn("p-1.5 -mx-1.5 rounded-lg transition-all cursor-pointer group flex flex-col justify-center",
+                            darkMode ? "hover:bg-white/6" : "hover:bg-gray-200/70"
+                          )}
+                          title="Haz clic para ver el detalle de este cliente"
+                        >
                           <div className="flex items-center justify-between mb-1">
-                            <span className={cn("text-xs font-semibold truncate max-w-[180px]", darkMode ? "text-gray-300" : "text-gray-700")}>{c.name}</span>
+                            <span className={cn("text-xs font-semibold truncate max-w-[180px] group-hover:text-cyan-400 transition-colors flex items-center gap-1", darkMode ? "text-gray-300" : "text-gray-700")}>
+                              {c.name}
+                              <ArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity text-cyan-400 shrink-0" />
+                            </span>
                             <div className="flex items-baseline gap-1.5 ml-2 shrink-0">
                               {isFilm ? (
                                 <>
