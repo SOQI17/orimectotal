@@ -5128,11 +5128,12 @@ ${rows.map(r=>{
 
   // ── FILTERED CONSUMOS for Inventory & Intelligence (by globalFilmFilter) ──
   const filteredConsumosForView = useMemo(() => {
-    if (globalFilmFilter === 'all') return allConsumos;
-    if (globalFilmFilter === 'DIHT') return allConsumos.filter(r => !r.film_type || r.film_type === 'DIHT');
-    if (globalFilmFilter === 'DIML') return allConsumos.filter(r => r.film_type === 'DIML');
-    return allConsumos.filter(r => r.film_type === 'DIHL');
-  }, [allConsumos, globalFilmFilter]);
+    let list = activeCategoryConsumos;
+    if (globalFilmFilter === 'DIHT') return list.filter(r => !r.film_type || r.film_type === 'DIHT');
+    if (globalFilmFilter === 'DIML') return list.filter(r => r.film_type === 'DIML');
+    if (globalFilmFilter === 'DIHL') return list.filter(r => r.film_type === 'DIHL');
+    return list;
+  }, [activeCategoryConsumos, globalFilmFilter]);
 
   const filteredStockEntries = useMemo(() => {
     if (globalFilmFilter === 'all') return stockEntries;
@@ -5657,7 +5658,7 @@ ${rows.map(r=>{
       const lastOrder = new Date(Math.max(...consumos.map(r => new Date(r.order_date).getTime())));
       const monthsSinceLast = (now.getFullYear()-lastOrder.getFullYear())*12 + (now.getMonth()-lastOrder.getMonth());
       return { client, totalQty, totalM2client, totalCost, avgMonthlyRevenue, avgMonthlyQty, avgMonthlyM2, monthsActive, monthsSinceLast };
-    }).filter(Boolean).sort((a,b) => b!.totalM2client - a!.totalM2client) as any[];
+    }).filter(Boolean).sort((a,b) => (activeCategory === 'PELICULAS' || activeCategory === 'ALL' ? (b!.totalM2client - a!.totalM2client) : (b!.totalCost - a!.totalCost))) as any[];
   }, [allClients, consumosByClientId, view]);
 
   // ── CLIENT PROJECTION: 12-month forecast per client ──────────────────────
@@ -10080,24 +10081,30 @@ ${rows.map(r=>{
                 </p>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                {/* Film type filter — hide only on comparativo (shows all data fixed) */}
-                {intelligenceTab !== 'comparativo' && (
-                <div className={cn("flex items-center gap-1 p-1 rounded-xl", darkMode ? "bg-white/5" : "bg-gray-100")}>
-                  {(intelligenceTab === 'projection'
-                    ? [['DIHT','DI-HT'], ['DIHL','DI-HL'], ['DIML','DI-ML']] as const
-                    : [['all','Todos'], ['DIHT','DI-HT'], ['DIHL','DI-HL'], ['DIML','DI-ML']] as const
-                  ).map(([val, label]) => (
-                    <button key={val} onClick={() => setGlobalFilmFilter(val as any)}
-                      className={cn("px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all",
-                        globalFilmFilter === val
-                          ? val === 'DIHL' ? "bg-blue-500/20 text-blue-400 ring-1 ring-blue-500/30"
-                          : val === 'DIHT' ? "bg-[#ED1C24]/15 text-[#ED1C24] ring-1 ring-[#ED1C24]/30"
-                          : val === 'DIML' ? "bg-purple-500/20 text-purple-400 ring-1 ring-purple-500/30"
-                          : (darkMode ? "bg-white/12 text-white" : "bg-gray-800 text-white")
-                          : (darkMode ? "text-gray-600 hover:text-gray-400 hover:bg-white/5" : "text-gray-400 hover:text-gray-600 hover:bg-gray-200")
-                      )}>{label}</button>
-                  ))}
-                </div>
+                {/* Film type filter for PELICULAS or Active Line Badge for non-films */}
+                {activeCategory === 'PELICULAS' ? (
+                  intelligenceTab !== 'comparativo' && (
+                    <div className={cn("flex items-center gap-1 p-1 rounded-xl", darkMode ? "bg-white/5" : "bg-gray-100")}>
+                      {(intelligenceTab === 'projection'
+                        ? [['DIHT','DI-HT'], ['DIHL','DI-HL'], ['DIML','DI-ML']] as const
+                        : [['all','Todos'], ['DIHT','DI-HT'], ['DIHL','DI-HL'], ['DIML','DI-ML']] as const
+                      ).map(([val, label]) => (
+                        <button key={val} onClick={() => setGlobalFilmFilter(val as any)}
+                          className={cn("px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all",
+                            globalFilmFilter === val
+                              ? val === 'DIHL' ? "bg-blue-500/20 text-blue-400 ring-1 ring-blue-500/30"
+                              : val === 'DIHT' ? "bg-[#ED1C24]/15 text-[#ED1C24] ring-1 ring-[#ED1C24]/30"
+                              : val === 'DIML' ? "bg-purple-500/20 text-purple-400 ring-1 ring-purple-500/30"
+                              : (darkMode ? "bg-white/12 text-white" : "bg-gray-800 text-white")
+                              : (darkMode ? "text-gray-600 hover:text-gray-400 hover:bg-white/5" : "text-gray-400 hover:text-gray-600 hover:bg-gray-200")
+                          )}>{label}</button>
+                      ))}
+                    </div>
+                  )
+                ) : (
+                  <div className={cn("px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider border", darkMode ? "bg-white/8 border-white/10 text-cyan-400" : "bg-gray-100 border-gray-200 text-gray-800")}>
+                    Línea: {activeCategoryLabel}
+                  </div>
                 )}
                 <div className={cn("flex items-center gap-2 text-xs px-3 py-1.5 rounded-xl border", darkMode ? "bg-white/4 border-white/8 text-gray-400" : "bg-gray-50 border-gray-100 text-gray-500")}>
                   <Zap className="w-3.5 h-3.5 text-amber-400" />
@@ -10147,6 +10154,118 @@ ${rows.map(r=>{
 
             {/* ══ TAB: COMPARATIVO ANUAL ══ */}
             {intelligenceTab === 'comparativo' && (() => {
+              if (activeCategory !== 'PELICULAS' && activeCategory !== 'ALL') {
+                const YEARS = [2024, 2025, 2026] as const;
+                const yearlyMetrics: Record<number, { units: number; revenue: number; items: Record<string, { units: number; revenue: number }> }> = {
+                  2024: { units: 0, revenue: 0, items: {} },
+                  2025: { units: 0, revenue: 0, items: {} },
+                  2026: { units: 0, revenue: 0, items: {} },
+                };
+
+                activeCategoryConsumos.forEach(r => {
+                  const d = new Date(r.order_date);
+                  const y = d.getFullYear();
+                  if (![2024, 2025, 2026].includes(y)) return;
+                  const qty = effectiveQty(r);
+                  const price = (r as any).sale_price !== null && (r as any).sale_price !== undefined ? (r as any).sale_price : (r.unit_cost || 0);
+                  const rev = qty * price;
+                  const itemKey = r.product_name || r.size || 'Producto Sin Nombre';
+
+                  yearlyMetrics[y].units += qty;
+                  yearlyMetrics[y].revenue += rev;
+                  if (!yearlyMetrics[y].items[itemKey]) yearlyMetrics[y].items[itemKey] = { units: 0, revenue: 0 };
+                  yearlyMetrics[y].items[itemKey].units += qty;
+                  yearlyMetrics[y].items[itemKey].revenue += rev;
+                });
+
+                const allItems = [...new Set(YEARS.flatMap(y => Object.keys(yearlyMetrics[y].items)))].sort();
+
+                return (
+                  <div className="space-y-5">
+                    <div className="grid grid-cols-3 gap-4">
+                      {YEARS.map(y => {
+                        const rev = yearlyMetrics[y].revenue;
+                        const units = yearlyMetrics[y].units;
+                        const prev = y > 2024 ? yearlyMetrics[y - 1].revenue : null;
+                        const growth = prev && prev > 0 ? ((rev - prev) / prev * 100) : null;
+                        return (
+                          <div key={y} className={cn("rounded-xl border p-5",
+                            y === 2024 ? (darkMode ? "bg-gray-500/10 border-gray-500/20" : "bg-gray-50 border-gray-200")
+                            : y === 2025 ? (darkMode ? "bg-cyan-500/8 border-cyan-500/20" : "bg-cyan-50 border-cyan-200")
+                            : (darkMode ? "bg-emerald-500/8 border-emerald-500/20" : "bg-emerald-50 border-emerald-200")
+                          )}>
+                            <div className="flex items-center justify-between mb-3">
+                              <span className={cn("text-xs font-black", y === 2024 ? "text-gray-400" : y === 2025 ? "text-cyan-400" : "text-emerald-400")}>{y}</span>
+                              {growth !== null && (
+                                <span className={cn("text-[9px] font-bold", growth >= 0 ? "text-emerald-400" : "text-red-400")}>
+                                  {growth >= 0 ? '▲' : '▼'} {Math.abs(growth).toFixed(1)}% vs ant.
+                                </span>
+                              )}
+                            </div>
+                            <p className={cn("text-3xl font-black leading-none", y === 2024 ? "text-gray-400" : y === 2025 ? "text-cyan-400" : "text-emerald-400")}>
+                              ${rev.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </p>
+                            <p className={cn("text-[10px] font-semibold mt-1", darkMode ? "text-gray-500" : "text-gray-400")}>facturación total ({activeCategoryLabel})</p>
+                            <p className={cn("text-lg font-black mt-2", darkMode ? "text-white" : "text-gray-800")}>{units.toLocaleString()} unid.</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className={cn("rounded-xl border overflow-hidden", darkMode ? "bg-[#16161A] border-white/8" : "bg-white border-gray-200/70 shadow-sm")}>
+                      <div className={cn("px-6 py-3 border-b flex items-center justify-between", darkMode ? "bg-white/3 border-white/8" : "bg-gray-50 border-gray-100")}>
+                        <span className={cn("text-[10px] font-bold uppercase tracking-wider", darkMode ? "text-gray-400" : "text-gray-600")}>
+                          Comparativo anual de {activeCategoryLabel} por Producto / Descripción
+                        </span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs min-w-[650px]">
+                          <thead className={cn("text-[9px] font-bold uppercase tracking-wider", darkMode ? "text-gray-600 bg-white/2" : "text-gray-400 bg-gray-50/60")}>
+                            <tr>
+                              <th className="px-5 py-2.5 text-left">Producto / Descripción</th>
+                              <th className="px-4 py-2.5 text-right">2024 ($)</th>
+                              <th className="px-4 py-2.5 text-right">2025 ($)</th>
+                              <th className="px-4 py-2.5 text-right">2026 ($)</th>
+                              <th className="px-4 py-2.5 text-center">Crecimiento (25→26)</th>
+                            </tr>
+                          </thead>
+                          <tbody className={cn("divide-y", darkMode ? "divide-white/5" : "divide-gray-50")}>
+                            {allItems.map(item => {
+                              const r24 = yearlyMetrics[2024].items[item]?.revenue || 0;
+                              const r25 = yearlyMetrics[2025].items[item]?.revenue || 0;
+                              const r26 = yearlyMetrics[2026].items[item]?.revenue || 0;
+                              const g2526 = r25 > 0 ? ((r26 - r25) / r25 * 100) : null;
+
+                              return (
+                                <tr key={item} className={cn("transition-colors", darkMode ? "hover:bg-white/3" : "hover:bg-gray-50/50")}>
+                                  <td className="px-5 py-3 font-semibold">{item}</td>
+                                  <td className="px-4 py-3 text-right font-mono">{r24 > 0 ? `${r24.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>
+                                  <td className="px-4 py-3 text-right font-mono text-cyan-400">{r25 > 0 ? `${r25.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>
+                                  <td className="px-4 py-3 text-right font-mono text-emerald-400 font-bold">{r26 > 0 ? `${r26.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>
+                                  <td className="px-4 py-3 text-center">
+                                    {g2526 !== null ? (
+                                      <span className={cn("text-[9px] font-bold", g2526 >= 0 ? "text-emerald-400" : "text-red-400")}>
+                                        {g2526 >= 0 ? '▲' : '▼'}{Math.abs(g2526).toFixed(0)}%
+                                      </span>
+                                    ) : '—'}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {allItems.length === 0 && (
+                              <tr>
+                                <td colSpan={5} className="px-5 py-8 text-center text-gray-500">
+                                  No hay datos registrados para esta línea de negocio
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
               const SIZES_FJ = ['8x10', '10x12', '10x14', '14x17'];
               const SIZES_TXE = ['8x10', '10x12', '11x14', '14x17'];
               const FT_ALL = ['DIHT', 'DIHL'] as const;
@@ -10482,7 +10601,7 @@ ${rows.map(r=>{
                         <th className="px-5 py-2.5 text-center">Recencia /25</th>
                         <th className="px-5 py-2.5 text-center">Volumen /25</th>
                         <th className="px-5 py-2.5 text-center">Tendencia /25</th>
-                        <th className="px-5 py-2.5 text-center">m²/mes</th>
+                        <th className="px-5 py-2.5 text-center">{activeCategory === 'PELICULAS' ? 'm²/mes' : 'Facturado ($)'}</th>
                         <th className="px-5 py-2.5 text-center">cj/mes</th>
                         <th className="px-5 py-2.5 text-center">Acción</th>
                       </tr>
@@ -10511,17 +10630,21 @@ ${rows.map(r=>{
                             <td className="px-5 py-3 text-center font-semibold">{item.volScore}</td>
                             <td className="px-5 py-3 text-center font-semibold">{item.trendScore}</td>
                             <td className="px-5 py-3 text-center">
-                              <span className={cn("font-black text-sm", darkMode ? "text-cyan-400" : "text-cyan-600")}>
-                                {getTotalM2(item.avgMonthly,
-                                  filteredConsumosForView.filter((r: ConsumptionRecord) => r.client_id === item.client.id)
-                                    .reduce((best: string, _r: ConsumptionRecord, _i: number, arr: ConsumptionRecord[]) => {
-                                      const sd: Record<string,number> = {};
-                                      arr.forEach((r: ConsumptionRecord) => { sd[r.size]=(sd[r.size]||0)+r.quantity; });
-                                      return Object.entries(sd).sort((a,b)=>b[1]-a[1])[0]?.[0] || '14x17';
-                                    }, '14x17'),
-                                  globalFilmFilter === 'DIHL' ? 'DIHL' : 'DIHT').toFixed(2)}
+                              <span className={cn("font-black text-sm", activeCategory === 'PELICULAS' ? (darkMode ? "text-cyan-400" : "text-cyan-600") : "text-emerald-400")}>
+                                {activeCategory === 'PELICULAS' ? (
+                                  getTotalM2(item.avgMonthly,
+                                    filteredConsumosForView.filter((r: ConsumptionRecord) => r.client_id === item.client.id)
+                                      .reduce((best: string, _r: ConsumptionRecord, _i: number, arr: ConsumptionRecord[]) => {
+                                        const sd: Record<string,number> = {};
+                                        arr.forEach((r: ConsumptionRecord) => { sd[r.size]=(sd[r.size]||0)+r.quantity; });
+                                        return Object.entries(sd).sort((a,b)=>b[1]-a[1])[0]?.[0] || '14x17';
+                                      }, '14x17'),
+                                    globalFilmFilter === 'DIHL' ? 'DIHL' : 'DIHT').toFixed(2)
+                                ) : (
+                                  `${(item.monthlyRevenue || 0).toLocaleString('es-EC', { maximumFractionDigits: 0 })}`
+                                )}
                               </span>
-                              <span className={cn("text-[9px] block", darkMode ? "text-gray-600" : "text-gray-400")}>m²</span>
+                              <span className={cn("text-[9px] block", darkMode ? "text-gray-600" : "text-gray-400")}>{activeCategory === 'PELICULAS' ? 'm²' : 'total'}</span>
                             </td>
                             <td className="px-5 py-3 text-center">{item.avgMonthly.toFixed(1)} <span className={cn("text-[9px]", darkMode ? "text-gray-600" : "text-gray-400")}>cj</span></td>
                             <td className="px-5 py-3 text-center">
@@ -10544,7 +10667,7 @@ ${rows.map(r=>{
               <div className={cn("rounded-xl border overflow-hidden", darkMode ? "bg-[#16161A] border-white/8" : "bg-white border-gray-200/70 shadow-sm")}>
                 <div className={cn("px-6 py-4 border-b", darkMode ? "border-white/8 bg-white/3" : "border-gray-100 bg-gray-50")}>
                   <h3 className={cn("text-[10px] font-bold uppercase tracking-wider flex items-center gap-2", darkMode ? "text-gray-400" : "text-gray-600")}>
-                    Ranking por Superficie — m² consumidos por cliente (orden descendente)
+                    {activeCategory === 'PELICULAS' ? 'Ranking por Superficie — m² consumidos por cliente (orden descendente)' : 'Ranking por Facturación Total — Ingresos generados por cliente (orden descendente)'}
                   </h3>
                 </div>
                 <div className="overflow-x-auto max-h-[600px] overflow-y-auto custom-scrollbar">
