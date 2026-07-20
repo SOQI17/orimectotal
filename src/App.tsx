@@ -1962,7 +1962,24 @@ function App() {
   }, [allConsumos, activeCategory]);
 
   const [altNames, setAltNames] = useState<Record<number, string>>({});
-  const [view, setView] = useState<'clients' | 'dashboard' | 'inventory' | 'intelligence' | 'imager' | 'usuarios'>('dashboard');
+  const [view, setView] = useState<'clients' | 'dashboard' | 'intelligence' | 'usuarios'>('dashboard');
+  const activeCategoryLabel = useMemo(() => {
+    const map: Record<string, string> = {
+      PELICULAS: 'Películas',
+      REPUESTOS: 'Repuestos',
+      SERVICIOS: 'Servicios',
+      ACCESORIOS: 'Accesorios',
+      ALIANZA: 'Alianza',
+      CONTRASTES: 'Contrastes',
+      EQUIPOS: 'Equipos',
+      INTERESES: 'Intereses',
+      MAMOTOME: 'Mamotome',
+      MANTENIMIENTO: 'Mantenimiento',
+      QUIMICOS: 'Químicos',
+      ALL: 'Todas las Líneas'
+    };
+    return map[activeCategory] || activeCategory;
+  }, [activeCategory]);
   const [loading, setLoading] = useState(() => {
     const hasConsumos = localStorage.getItem('cached_consumos') !== null;
     return !hasConsumos;
@@ -6205,8 +6222,6 @@ ${rows.map(r=>{
             {[
               { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin','financiero','vendedor','asistente','gerencia'] },
               { id: 'clients', label: 'Clientes', icon: Users, roles: ['admin','financiero','vendedor','asistente','gerencia'] },
-              { id: 'inventory', label: 'Inventario', icon: Package, roles: ['admin','financiero','asistente','gerencia'] },
-              { id: 'imager', label: 'Imager', icon: Layers, roles: ['admin','financiero','asistente','gerencia'] },
               { id: 'intelligence', label: 'Inteligencia', icon: Brain, roles: ['admin','financiero','gerencia'] },
               ...(role === 'admin' ? [{ id: 'usuarios', label: 'Usuarios', icon: Shield, roles: ['admin'] }] : []),
             ].filter(t => t.roles.includes(role || '')).map(({ id, label, icon: Icon }) => (
@@ -6229,6 +6244,104 @@ ${rows.map(r=>{
               </button>
             ))}
           </nav>
+
+          <div className={cn("h-6 w-px mx-0.5", darkMode ? "bg-white/10" : "bg-gray-200")} />
+
+          {/* Global Category Selector */}
+          <div className={cn("flex items-center gap-0.5 p-1 rounded-xl border transition-colors", darkMode ? "bg-white/5 border-white/10" : "bg-gray-100/80 border-gray-200/80")}>
+            <span className={cn("text-[9px] font-black uppercase tracking-wider px-1.5 flex items-center gap-1", darkMode ? "text-gray-500" : "text-gray-400")}>
+              Línea:
+            </span>
+            {([
+              ['PELICULAS', 'Películas'],
+              ['REPUESTOS', 'Repuestos'],
+              ['SERVICIOS', 'Servicios']
+            ] as const).map(([val, label]) => (
+              <button
+                key={val}
+                onClick={() => {
+                  setActiveCategory(val);
+                  setOtherDropdownOpen(false);
+                }}
+                className={cn(
+                  "px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer",
+                  activeCategory === val
+                    ? val === 'PELICULAS'
+                      ? "bg-[#ED1C24] text-white shadow-sm"
+                      : val === 'REPUESTOS'
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "bg-purple-600 text-white shadow-sm"
+                    : (darkMode ? "text-gray-400 hover:text-gray-200" : "text-gray-500 hover:text-gray-700")
+                )}
+              >
+                {label}
+              </button>
+            ))}
+            
+            {/* Dropdown for secondary categories */}
+            {(() => {
+              const otherCategories = [
+                { value: 'ACCESORIOS', label: 'Accesorios' },
+                { value: 'ALIANZA', label: 'Alianza' },
+                { value: 'CONTRASTES', label: 'Contrastes' },
+                { value: 'EQUIPOS', label: 'Equipos' },
+                { value: 'INTERESES', label: 'Intereses' },
+                { value: 'MAMOTOME', label: 'Mamotome' },
+                { value: 'MANTENIMIENTO', label: 'Mantenimiento' },
+                { value: 'QUIMICOS', label: 'Químicos' },
+                { value: 'ALL', label: 'Todas' }
+              ];
+              const isOtherActive = otherCategories.some(cat => cat.value === activeCategory);
+              const activeLabel = otherCategories.find(cat => cat.value === activeCategory)?.label || 'Más';
+
+              return (
+                <div className="relative">
+                  <button
+                    onClick={() => setOtherDropdownOpen(o => !o)}
+                    className={cn(
+                      "px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer",
+                      isOtherActive
+                        ? activeCategory === 'ALL'
+                          ? (darkMode ? "bg-white/15 text-white" : "bg-gray-800 text-white shadow-sm")
+                          : (darkMode ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30" : "bg-cyan-50 text-cyan-700 border border-cyan-200 shadow-sm")
+                        : (darkMode ? "text-gray-400 hover:text-gray-200" : "text-gray-500 hover:text-gray-700")
+                    )}
+                  >
+                    <span>{activeLabel}</span>
+                    <ChevronDown className="w-3 h-3 text-gray-400" />
+                  </button>
+
+                  {otherDropdownOpen && (
+                    <>
+                      <div className="fixed inset-0 z-30" onClick={() => setOtherDropdownOpen(false)} />
+                      <div className={cn(
+                        "absolute right-0 mt-1 w-44 rounded-xl border p-1 shadow-xl z-40 flex flex-col gap-0.5",
+                        darkMode ? "bg-[#16161A] border-white/8 text-white" : "bg-white border-gray-200 text-gray-800"
+                      )}>
+                        {otherCategories.map(cat => (
+                          <button
+                            key={cat.value}
+                            onClick={() => {
+                              setActiveCategory(cat.value);
+                              setOtherDropdownOpen(false);
+                            }}
+                            className={cn(
+                              "w-full text-left px-3 py-1.5 rounded-lg text-[10px] font-bold transition-colors cursor-pointer",
+                              activeCategory === cat.value
+                                ? (darkMode ? "bg-cyan-500/10 text-cyan-400" : "bg-cyan-50 text-cyan-600")
+                                : (darkMode ? "hover:bg-white/5 text-gray-300" : "hover:bg-gray-50 text-gray-600")
+                            )}
+                          >
+                            {cat.label}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
         </div>
 
         <div className="flex items-center gap-1.5 min-w-0">
@@ -6414,7 +6527,7 @@ ${rows.map(r=>{
                   darkMode ? "text-gray-500" : "text-gray-400"
                 )}>
                   <Hospital className="w-3.5 h-3.5" />
-                  Centros Médicos
+                  Centros Médicos · <span className="text-[#ED1C24] font-black">{activeCategoryLabel}</span>
                   <span className={cn(
                     "text-[9px] font-black px-1.5 py-0.5 rounded-md",
                     darkMode ? "bg-white/10 text-gray-300" : "bg-gray-200 text-gray-600"
@@ -6470,13 +6583,16 @@ ${rows.map(r=>{
                       <span className="flex items-center gap-1"><User className="w-2.5 h-2.5"/> {client.client_code || 'N/A'}</span>
                     </div>
                     {(() => {
-                      const clientConsumos = allConsumos.filter(r => r.client_id === client.id);
+                      const clientConsumos = activeCategoryConsumos.filter(r => r.client_id === client.id);
                       if (!clientConsumos.length) return null;
                       const totalM2 = clientConsumos.reduce((s, r) => s + getTotalM2(effectiveQty(r), r.size, r.film_type), 0);
-                      if (totalM2 <= 0) return null;
+                      const totalRev = clientConsumos.reduce((s, r) => s + (effectiveQty(r) * ((r.sale_price !== null && r.sale_price !== undefined) ? r.sale_price : (r.unit_cost || 0))), 0);
+                      
                       return (
-                        <p className={cn("text-[10px] font-bold mt-1.5", darkMode ? "text-cyan-500" : "text-cyan-600")}>
-                          {totalM2.toFixed(1)} m²
+                        <p className={cn("text-[10px] font-bold mt-1.5", darkMode ? "text-cyan-400" : "text-cyan-600")}>
+                          {(activeCategory === 'PELICULAS' || activeCategory === 'ALL') && totalM2 > 0
+                            ? `${totalM2.toFixed(1)} m²`
+                            : `$${totalRev.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                         </p>
                       );
                     })()}
@@ -7331,18 +7447,15 @@ ${rows.map(r=>{
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div>
-                  <h2 className="text-xl font-black tracking-tight">
+                  <h2 className="text-xl font-black tracking-tight flex items-center gap-2">
                     {dashboardView === 'ventas' ? 'Dashboard de Ventas' : 'Dashboard de Compras'}
+                    <span className={cn("text-xs font-bold px-2 py-0.5 rounded-lg border", darkMode ? "bg-white/5 border-white/10 text-[#ED1C24]" : "bg-red-50 border-red-100 text-[#ED1C24]")}>
+                      {activeCategoryLabel}
+                    </span>
                   </h2>
                   <p className={cn("text-[10px] font-medium uppercase tracking-wider mt-0.5", darkMode ? "text-gray-600" : "text-gray-400")}>
                     {dashboardView === 'ventas'
-                      ? activeCategory === 'PELICULAS'
-                        ? 'Métricas globales · FUJIFILM DI-HT · DI-HL'
-                        : activeCategory === 'REPUESTOS'
-                        ? 'Repuestos · Líneas de repuesto · Stock y ventas'
-                        : activeCategory === 'SERVICIOS'
-                        ? 'Servicios · Contratos · Mantenimiento y soporte'
-                        : 'Métricas globales · Películas · Repuestos · Servicios'
+                      ? `Línea de Negocio: ${activeCategoryLabel} · Métricas globales y análisis de rendimiento`
                       : 'Importaciones · Inversión · Márgenes · Rotación'}
                   </p>
                 </div>
@@ -7385,103 +7498,6 @@ ${rows.map(r=>{
                 )}
               </div>
               <div className="flex items-center gap-2">
-                {/* Category selector */}
-                <div className={cn("flex items-center gap-0.5 p-0.5 rounded-xl border", darkMode ? "bg-white/5 border-white/10" : "bg-gray-100 border-gray-200")}>
-                  {([
-                    ['PELICULAS', 'Películas'],
-                    ['REPUESTOS', 'Repuestos'],
-                    ['SERVICIOS', 'Servicios']
-                  ] as const).map(([val, label]) => (
-                    <button
-                      key={val}
-                      onClick={() => {
-                        setActiveCategory(val);
-                        setOtherDropdownOpen(false);
-                      }}
-                      className={cn(
-                        "px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer",
-                        activeCategory === val
-                          ? val === 'PELICULAS'
-                            ? "bg-[#ED1C24] text-white shadow-sm"
-                            : val === 'REPUESTOS'
-                              ? "bg-blue-600 text-white shadow-sm"
-                              : "bg-purple-600 text-white shadow-sm"
-                          : (darkMode ? "text-gray-500 hover:text-gray-300" : "text-gray-400 hover:text-gray-600")
-                      )}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                  
-                  {/* Dropdown for other categories */}
-                  {(() => {
-                    const otherCategories = [
-                      { value: 'ACCESORIOS', label: 'Accesorios' },
-                      { value: 'ALIANZA', label: 'Alianza' },
-                      { value: 'CONTRASTES', label: 'Contrastes' },
-                      { value: 'EQUIPOS', label: 'Equipos' },
-                      { value: 'INTERESES', label: 'Intereses' },
-                      { value: 'MAMOTOME', label: 'Mamotome' },
-                      { value: 'MANTENIMIENTO', label: 'Mantenimiento' },
-                      { value: 'QUIMICOS', label: 'Químicos' },
-                      { value: 'ALL', label: 'Todas' }
-                    ];
-                    const isOtherActive = otherCategories.some(cat => cat.value === activeCategory);
-                    const activeLabel = otherCategories.find(cat => cat.value === activeCategory)?.label || 'Más';
-
-                    return (
-                      <div className="relative">
-                        <button
-                          onClick={() => setOtherDropdownOpen(o => !o)}
-                          className={cn(
-                            "px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer",
-                            isOtherActive
-                              ? activeCategory === 'ALL'
-                                ? (darkMode ? "bg-white/12 text-white" : "bg-gray-800 text-white shadow-sm")
-                                : (darkMode ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20" : "bg-cyan-50 text-cyan-700 border border-cyan-200 shadow-sm")
-                              : (darkMode ? "text-gray-500 hover:text-gray-300" : "text-gray-400 hover:text-gray-600")
-                          )}
-                        >
-                          <span>{activeLabel}</span>
-                          <ChevronDown className="w-3 h-3 text-gray-400" />
-                        </button>
-
-                        {otherDropdownOpen && (
-                          <>
-                            {/* Backdrop to close list */}
-                            <div className="fixed inset-0 z-30" onClick={() => setOtherDropdownOpen(false)} />
-                            
-                            {/* Category List */}
-                            <div className={cn(
-                              "absolute right-0 mt-1 w-44 rounded-xl border p-1 shadow-xl z-40 flex flex-col gap-0.5",
-                              darkMode 
-                                ? "bg-[#16161A] border-white/8 text-white" 
-                                : "bg-white border-gray-200 text-gray-800"
-                            )}>
-                              {otherCategories.map(cat => (
-                                <button
-                                  key={cat.value}
-                                  onClick={() => {
-                                    setActiveCategory(cat.value);
-                                    setOtherDropdownOpen(false);
-                                  }}
-                                  className={cn(
-                                    "w-full text-left px-3 py-1.5 rounded-lg text-[10px] font-bold transition-colors cursor-pointer",
-                                    activeCategory === cat.value
-                                      ? (darkMode ? "bg-cyan-500/10 text-cyan-400" : "bg-cyan-50 text-cyan-600")
-                                      : (darkMode ? "hover:bg-white/5 text-gray-300" : "hover:bg-gray-50 text-gray-600")
-                                  )}
-                                >
-                                  {cat.label}
-                                </button>
-                              ))}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
 
                 {/* Month quick-picker */}
                 <div className="relative">
