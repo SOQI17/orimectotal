@@ -5048,14 +5048,51 @@ ${rows.map(r=>{
     return stockEntries.filter(e => e.film_type === 'DIHL');
   }, [stockEntries, globalFilmFilter]);
 
+  // ── MAP INDEXES FOR O(1) LOOKUPS (MASSIVE PERFORMANCE SPEEDUP) ──────────────
+  const clientsById = useMemo(() => {
+    const map = new Map<number, Client>();
+    for (let i = 0; i < allClients.length; i++) {
+      map.set(allClients[i].id, allClients[i]);
+    }
+    return map;
+  }, [allClients]);
+
+  const consumosByClientId = useMemo(() => {
+    const map = new Map<number, ConsumptionRecord[]>();
+    for (let i = 0; i < filteredConsumosForView.length; i++) {
+      const r = filteredConsumosForView[i];
+      let arr = map.get(r.client_id);
+      if (!arr) {
+        arr = [];
+        map.set(r.client_id, arr);
+      }
+      arr.push(r);
+    }
+    return map;
+  }, [filteredConsumosForView]);
+
+  const activeConsumosByClientId = useMemo(() => {
+    const map = new Map<number, ConsumptionRecord[]>();
+    for (let i = 0; i < activeCategoryConsumos.length; i++) {
+      const r = activeCategoryConsumos[i];
+      let arr = map.get(r.client_id);
+      if (!arr) {
+        arr = [];
+        map.set(r.client_id, arr);
+      }
+      arr.push(r);
+    }
+    return map;
+  }, [activeCategoryConsumos]);
+
   // ── INTELLIGENCE: Reorder Alerts ──────────────────────────────────────────
   const reorderAlerts = useMemo(() => {
+    if (view !== 'intelligence' && view !== 'dashboard') return [];
     const now = new Date();
     return allClients.map(client => {
-      const consumos = filteredConsumosForView
-        .filter(r => r.client_id === client.id)
-        .sort((a, b) => new Date(b.order_date).getTime() - new Date(a.order_date).getTime());
-      if (consumos.length < 2) return null;
+      const raw = consumosByClientId.get(client.id);
+      if (!raw || raw.length < 2) return null;
+      const consumos = [...raw].sort((a, b) => new Date(b.order_date).getTime() - new Date(a.order_date).getTime());
 
       const lastOrder = new Date(consumos[0].order_date);
       const firstOrder = new Date(consumos[consumos.length - 1].order_date);
@@ -5094,10 +5131,11 @@ ${rows.map(r=>{
         totalQty,
       };
     }).filter(Boolean).sort((a, b) => a!.daysUntilNext - b!.daysUntilNext) as NonNullable<ReturnType<typeof allClients[0] extends never ? never : any>>[];
-  }, [filteredConsumosForView, allClients]);
+  }, [consumosByClientId, allClients, view]);
 
   // ── INTELLIGENCE: Demand Projection ──────────────────────────────────────
   const demandProjection = useMemo(() => {
+    if (view !== 'intelligence') return [];
     const now = new Date();
     // Sizes depend on film type filter
     const sizes = globalFilmFilter === 'DIML'
@@ -5108,7 +5146,9 @@ ${rows.map(r=>{
       let totalProjected = 0;
       const contributors: { name: string; projected: number }[] = [];
       allClients.forEach(client => {
-        const consumos = filteredConsumosForView.filter(r => r.client_id === client.id && r.size === size);
+        const raw = consumosByClientId.get(client.id);
+        if (!raw) return;
+        const consumos = raw.filter(r => r.size === size);
         if (!consumos.length) return;
         const sorted = [...consumos].sort((a, b) => new Date(b.order_date).getTime() - new Date(a.order_date).getTime());
         const first = new Date(sorted[sorted.length - 1].order_date);
@@ -5132,18 +5172,14 @@ ${rows.map(r=>{
       });
 
       // Use Stock Film Planning as source of truth for current stock
-      // stockFromFilmPlanning may not be defined yet at this point (circular dep) — use lazy accessor
       const filmStockBySize = (() => {
-        // Compute from stockFilmData directly (same logic as stockFromFilmPlanning)
         const now2 = new Date();
-        // Use most recent year that has stock film data (may be behind current calendar year)
         const availYears = Object.keys(stockFilmData).map(Number).filter(y => y <= now2.getFullYear()).sort((a,b) => b-a);
         const cy = availYears[0] || now2.getFullYear();
-        const cm = cy === now2.getFullYear() ? now2.getMonth() : 11; // if past year, use Dec
+        const cm = cy === now2.getFullYear() ? now2.getMonth() : 11;
         let boxes = 0;
         STOCK_FILM_PRODUCTS.forEach(prod => {
           if (prod.size !== size) return;
-          // Only use film types matching the current global filter
           if (globalFilmFilter === 'DIHT' && prod.type !== 'DIHT') return;
           if (globalFilmFilter === 'DIHL' && prod.type !== 'DIHL') return;
           if (globalFilmFilter === 'DIML' && prod.type !== 'DIML') return;
@@ -5189,16 +5225,16 @@ ${rows.map(r=>{
         topContributors: contributors.sort((a, b) => b.projected - a.projected).slice(0, 5),
       };
     });
-  }, [filteredConsumosForView, allClients, stockLevels, filteredStockEntries, stockFilmData, allConsumos, globalFilmFilter]);
+  }, [consumosByClientId, allClients, stockLevels, filteredStockEntries, stockFilmData, allConsumos, globalFilmFilter, filteredConsumosForView, view]);
 
   // ── INTELLIGENCE: At-Risk Clients ─────────────────────────────────────────
   const atRiskClients = useMemo(() => {
+    if (view !== 'intelligence') return [];
     const now = new Date();
     return allClients.map(client => {
-      const consumos = filteredConsumosForView
-        .filter(r => r.client_id === client.id)
-        .sort((a, b) => new Date(b.order_date).getTime() - new Date(a.order_date).getTime());
-      if (consumos.length < 2) return null;
+      const raw = consumosByClientId.get(client.id);
+      if (!raw || raw.length < 2) return null;
+      const consumos = [...raw].sort((a, b) => new Date(b.order_date).getTime() - new Date(a.order_date).getTime());
 
       const lastOrder = new Date(consumos[0].order_date);
       const monthsSinceLast = (now.getFullYear() - lastOrder.getFullYear()) * 12 + (now.getMonth() - lastOrder.getMonth());
@@ -5224,16 +5260,16 @@ ${rows.map(r=>{
 
       return { client, monthsSinceLast, avgMonthly: avgMonthly.toFixed(1), totalQty, lostRevenue, riskLevel, trend: trend.toFixed(0), lastOrder };
     }).filter(Boolean).sort((a, b) => b!.monthsSinceLast - a!.monthsSinceLast) as any[];
-  }, [filteredConsumosForView, allClients]);
+  }, [consumosByClientId, allClients, view]);
 
   // ── INTELLIGENCE: Salesperson Goals ──────────────────────────────────────
   const salespersonPerformance = useMemo(() => {
+    if (view !== 'intelligence' && view !== 'dashboard') return [];
     const now = new Date();
     const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
 
-    // Get ALL unique salespersons from allClients (not filtered by date)
     const allSalespersons = [...new Set(
       allClients
         .map(c => (c.salesperson || '').toUpperCase().trim())
@@ -5243,7 +5279,7 @@ ${rows.map(r=>{
     return allSalespersons.map(spName => {
       const goal = salespersonGoals[spName] || 0;
       const spConsumos = allConsumos.filter(r => {
-        const c = allClients.find(x => x.id === r.client_id);
+        const c = clientsById.get(r.client_id);
         return (c?.salesperson || '').toUpperCase().trim() === spName;
       });
 
@@ -5257,7 +5293,6 @@ ${rows.map(r=>{
 
       const monthlyRevenue = spConsumos.filter(r => new Date(r.order_date) >= currentMonthStart).reduce((s, r) => s + r.quantity * (r.unit_cost || 0), 0);
 
-      // Calculate monthly average from ALL history (not date-filtered)
       const allDates = spConsumos.map(r => new Date(r.order_date));
       const minDate = allDates.length ? new Date(Math.min(...allDates.map(d => d.getTime()))) : now;
       const monthsActive = Math.max(1, (now.getFullYear() - minDate.getFullYear()) * 12 + (now.getMonth() - minDate.getMonth()) + 1);
@@ -5266,24 +5301,17 @@ ${rows.map(r=>{
       const monthlyAvg = Math.round(totalQty / monthsActive);
       const monthlyAvgM2 = parseFloat((totalM2sp / monthsActive).toFixed(2));
 
-      // This month m²
       const thisMonthM2 = parseFloat(spConsumos.filter(r => new Date(r.order_date) >= currentMonthStart)
         .reduce((s, r) => s + getTotalM2(effectiveQty(r), r.size, r.film_type), 0).toFixed(2));
 
-      // Total quantity in dashboard period (for the table "Cajas Vendidas" column)
-      let periodConsumos = allConsumos.filter(r => {
-        const c = allClients.find(x => x.id === r.client_id);
-        return (c?.salesperson || '').toUpperCase().trim() === spName;
-      });
+      let periodConsumos = spConsumos;
       if (dashboardStartDate) periodConsumos = periodConsumos.filter(r => new Date(r.order_date) >= new Date(dashboardStartDate));
       if (dashboardEndDate) periodConsumos = periodConsumos.filter(r => new Date(r.order_date) <= new Date(dashboardEndDate));
       if (globalFilmFilter !== 'all') periodConsumos = periodConsumos.filter(r => (r.film_type || 'DIHT') === globalFilmFilter);
       const quantity = periodConsumos.reduce((s, r) => s + effectiveQty(r), 0);
       const periodM2 = parseFloat(periodConsumos.reduce((s, r) => s + getTotalM2(effectiveQty(r), r.size, r.film_type), 0).toFixed(2));
-      // Total revenue respecting dashboard date filter
       const revenue = periodConsumos.reduce((s, r) => s + (effectiveQty(r) * (r.unit_cost || 0)), 0);
 
-      // Last 6 months chart — show m²
       const history = Array.from({ length: 6 }, (_, i) => {
         const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
         const monthConsumos = spConsumos.filter(r => {
@@ -5300,16 +5328,16 @@ ${rows.map(r=>{
 
       return { name: spName, quantity, periodM2, totalM2sp, revenue, goal, thisMonth, thisMonthM2, lastMonth, monthlyRevenue, monthlyAvg, monthlyAvgM2, history, progressPct, growthVsLastMonth };
     }).filter(Boolean).sort((a, b) => (b!.quantity) - (a!.quantity)) as any[];
-  }, [salespersonGoals, allConsumos, allClients, dashboardStartDate, dashboardEndDate, globalFilmFilter]);
+  }, [salespersonGoals, allConsumos, allClients, clientsById, dashboardStartDate, dashboardEndDate, globalFilmFilter, view]);
 
   // ── INTELLIGENCE: Client Health Score ────────────────────────────────────
   const clientHealthScores = useMemo(() => {
+    if (view !== 'intelligence') return [];
     const now = new Date();
     return allClients.map(client => {
-      const consumos = filteredConsumosForView
-        .filter(r => r.client_id === client.id)
-        .sort((a, b) => new Date(b.order_date).getTime() - new Date(a.order_date).getTime());
-      if (consumos.length === 0) return null;
+      const raw = consumosByClientId.get(client.id);
+      if (!raw || raw.length === 0) return null;
+      const consumos = [...raw].sort((a, b) => new Date(b.order_date).getTime() - new Date(a.order_date).getTime());
 
       const lastOrder = new Date(consumos[0].order_date);
       const monthsSinceLast = (now.getFullYear() - lastOrder.getFullYear()) * 12 + (now.getMonth() - lastOrder.getMonth());
@@ -5318,21 +5346,17 @@ ${rows.map(r=>{
       const totalQty = consumos.reduce((s, r) => s + effectiveQty(r), 0);
       const avgMonthly = totalQty / monthsActive;
 
-      // Frequency score (0-25): how regularly they order
       const orderDates = consumos.map(r => new Date(r.order_date).getTime());
       const gaps: number[] = [];
       for (let i = 0; i < orderDates.length - 1; i++) gaps.push((orderDates[i] - orderDates[i+1]) / (1000*60*60*24));
       const avgGap = gaps.length ? gaps.reduce((s,g) => s+g, 0) / gaps.length : 999;
       const freqScore = Math.max(0, Math.min(25, 25 - avgGap * 0.4));
 
-      // Recency score (0-25): how recently they ordered
       const recencyScore = Math.max(0, 25 - monthsSinceLast * 5);
 
-      // Volume score (0-25): avg monthly vs all clients avg
       const globalAvg = filteredConsumosForView.length / Math.max(1, allClients.length);
       const volScore = Math.min(25, (avgMonthly / Math.max(1, globalAvg)) * 15);
 
-      // Trend score (0-25): last 3 months vs previous 3
       const threeAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1);
       const sixAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1);
       const recent = consumos.filter(r => new Date(r.order_date) >= threeAgo).reduce((s, r) => s + effectiveQty(r), 0);
@@ -5345,20 +5369,18 @@ ${rows.map(r=>{
 
       return { client, score, grade, freqScore: Math.round(freqScore), recencyScore: Math.round(recencyScore), volScore: Math.round(volScore), trendScore: Math.round(trendScore), avgMonthly, monthsSinceLast, totalQty };
     }).filter(Boolean).sort((a, b) => b!.score - a!.score) as any[];
-  }, [filteredConsumosForView, allClients]);
+  }, [consumosByClientId, allClients, filteredConsumosForView, view]);
 
   // ── INTELLIGENCE: Seasonality ─────────────────────────────────────────────
   const seasonalityData = useMemo(() => {
+    if (view !== 'intelligence') return { chartData: [], peakMonth: null, lowMonth: null, variationPct: null, SIZES: [], peakYear: null, lowYear: null };
     const SIZES = ['8x10', '10x12', '10x14', '14x17'];
     const months = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-    // Build monthly totals per size over all years
     const grid: Record<string, number[]> = {};
     SIZES.forEach(s => { grid[s] = Array(12).fill(0); });
     const totalByMonth = Array(12).fill(0);
-    // Track per (year, month) to find which specific year had the peak/low
     const byYearMonth: Record<string, number> = {};
-    // Track per client per month for top-client tooltip
-    const clientByMonth: Record<number, Record<number, number>> = {}; // monthIdx → clientId → qty
+    const clientByMonth: Record<number, Record<number, number>> = {};
     filteredConsumosForView.forEach(r => {
       const d = new Date(r.order_date);
       const m = d.getMonth();
@@ -5370,10 +5392,8 @@ ${rows.map(r=>{
       if (!clientByMonth[m]) clientByMonth[m] = {};
       clientByMonth[m][r.client_id] = (clientByMonth[m][r.client_id] || 0) + effectiveQty(r);
     });
-    // Normalize: index where 100 = global average month
     const globalAvg = totalByMonth.reduce((s,v) => s+v, 0) / 12 || 1;
-    // Track per client per month per size for expanded tooltip
-    const clientByMonthSize: Record<string, Record<number, number>> = {}; // "monthIdx-size" → clientId → qty
+    const clientByMonthSize: Record<string, Record<number, number>> = {};
     filteredConsumosForView.forEach(r => {
       const d = new Date(r.order_date);
       const m = d.getMonth();
@@ -5386,7 +5406,7 @@ ${rows.map(r=>{
         ? Object.entries(clientByMonth[i]).sort((a,b) => b[1]-a[1])[0]
         : null;
       const topClientName = topClientId
-        ? allClients.find(c => c.id === parseInt(topClientId[0]))?.name || '—'
+        ? clientsById.get(parseInt(topClientId[0]))?.name || '—'
         : '—';
       const topClientQty = topClientId ? topClientId[1] : 0;
       const row: any = { label, total: totalByMonth[i], index: Math.round((totalByMonth[i] / globalAvg) * 100), topClientName, topClientQty };
@@ -5395,7 +5415,7 @@ ${rows.map(r=>{
         const sizeTop = clientByMonthSize[`${i}-${s}`]
           ? Object.entries(clientByMonthSize[`${i}-${s}`]).sort((a,b) => b[1]-a[1])[0]
           : null;
-        row[`${s}_topClient`] = sizeTop ? allClients.find(c => c.id === parseInt(sizeTop[0]))?.name || '—' : '—';
+        row[`${s}_topClient`] = sizeTop ? clientsById.get(parseInt(sizeTop[0]))?.name || '—' : '—';
         row[`${s}_topQty`] = sizeTop ? sizeTop[1] : 0;
       });
       return row;
@@ -5407,7 +5427,6 @@ ${rows.map(r=>{
     const lowMonth = meaningfulMonths.length ? meaningfulMonths.reduce((low, m) => m.total < low.total ? m : low, meaningfulMonths[0]) : peakMonth;
     const variationPct = lowMonth && lowMonth.total > 0 ? Math.round(((peakMonth.total - lowMonth.total) / lowMonth.total) * 100) : null;
 
-    // Find which specific year had the highest value for peak month index
     const peakMonthIdx = months.indexOf(peakMonth?.label);
     const lowMonthIdx = months.indexOf(lowMonth?.label);
     const peakYear = peakMonthIdx >= 0
@@ -5422,12 +5441,13 @@ ${rows.map(r=>{
       : null;
 
     return { chartData, peakMonth, lowMonth, variationPct, SIZES, peakYear, lowYear };
-  }, [filteredConsumosForView, allClients]);
+  }, [filteredConsumosForView, clientsById, view]);
 
   // ── INTELLIGENCE: Growth Potential Clients ────────────────────────────────
   const growthPotentialClients = useMemo(() => {
+    if (view !== 'intelligence') return [];
     return allClients.map(client => {
-      const consumos = filteredConsumosForView.filter(r => r.client_id === client.id);
+      const consumos = consumosByClientId.get(client.id) || [];
       const hasPrinters = (client.printers?.length || 0) > 0;
       const printerCount = client.printers?.length || 0;
       if (!hasPrinters || consumos.length === 0) return null;
@@ -5438,7 +5458,6 @@ ${rows.map(r=>{
       const totalQty = consumos.reduce((s, r) => s + effectiveQty(r), 0);
       const avgMonthly = totalQty / monthsActive;
 
-      // Expected consumption: ~2 boxes/printer/month as benchmark
       const expectedMonthly = printerCount * 2;
       const captureRate = Math.min(100, Math.round((avgMonthly / expectedMonthly) * 100));
       const untappedBoxes = Math.max(0, expectedMonthly - avgMonthly);
@@ -5447,10 +5466,11 @@ ${rows.map(r=>{
 
       return { client, printerCount, avgMonthly: parseFloat(avgMonthly.toFixed(1)), expectedMonthly, captureRate, untappedBoxes: parseFloat(untappedBoxes.toFixed(1)) };
     }).filter(Boolean).sort((a, b) => b!.untappedBoxes - a!.untappedBoxes) as any[];
-  }, [allClients, filteredConsumosForView]);
+  }, [allClients, consumosByClientId, view]);
 
   // ── INTELLIGENCE: Province Comparison ────────────────────────────────────
   const provinceComparison = useMemo(() => {
+    if (view !== 'intelligence') return [];
     const now = new Date();
     const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1);
     const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 12, 1);
@@ -5460,7 +5480,7 @@ ${rows.map(r=>{
       const prov = client.province || 'Sin provincia';
       if (!map[prov]) map[prov] = { clients: 0, qty: 0, m2: 0, revenue: 0, recent: 0, previous: 0 };
       map[prov].clients++;
-      filteredConsumosForView.filter(r => r.client_id === client.id).forEach(r => {
+      (consumosByClientId.get(client.id) || []).forEach(r => {
         const d = new Date(r.order_date);
         const qty = effectiveQty(r);
         map[prov].qty += qty;
@@ -5475,17 +5495,18 @@ ${rows.map(r=>{
       const trend = data.previous === 0 ? null : ((data.recent - data.previous) / data.previous) * 100;
       return { province, ...data, trend, avgPerClient: data.clients > 0 ? (data.qty / data.clients).toFixed(1) : '0', avgM2PerClient: data.clients > 0 ? (data.m2 / data.clients).toFixed(1) : '0' };
     }).sort((a, b) => b.m2 - a.m2);
-  }, [allClients, filteredConsumosForView]);
+  }, [allClients, consumosByClientId, view]);
 
   // ── INTELLIGENCE: Anomaly Detection ──────────────────────────────────────
   const anomalies = useMemo(() => {
+    if (view !== 'intelligence') return [];
     const now = new Date();
     const results: any[] = [];
     allClients.forEach(client => {
-      const consumos = filteredConsumosForView.filter(r => r.client_id === client.id).sort((a,b) => new Date(b.order_date).getTime() - new Date(a.order_date).getTime());
-      if (consumos.length < 4) return;
+      const raw = consumosByClientId.get(client.id);
+      if (!raw || raw.length < 4) return;
+      const consumos = [...raw].sort((a,b) => new Date(b.order_date).getTime() - new Date(a.order_date).getTime());
 
-      // Build monthly qtys last 12 months
       const monthly: Record<string, number> = {};
       consumos.forEach(r => {
         const d = new Date(r.order_date);
@@ -5518,12 +5539,13 @@ ${rows.map(r=>{
       }
     });
     return results.sort((a,b) => parseFloat(b.zScore) - parseFloat(a.zScore));
-  }, [allClients, filteredConsumosForView]);
+  }, [allClients, consumosByClientId, view]);
 
   // ── INTELLIGENCE: Profitability Ranking ──────────────────────────────────
   const profitabilityRanking = useMemo(() => {
+    if (view !== 'intelligence') return [];
     return allClients.map(client => {
-      const consumos = filteredConsumosForView.filter(r => r.client_id === client.id);
+      const consumos = consumosByClientId.get(client.id) || [];
       if (!consumos.length) return null;
       const totalQty = consumos.reduce((s, r) => s + effectiveQty(r), 0);
       const totalM2client = parseFloat(consumos.reduce((s, r) => s + getTotalM2(effectiveQty(r), r.size, r.film_type), 0).toFixed(2));
@@ -5538,15 +5560,16 @@ ${rows.map(r=>{
       const monthsSinceLast = (now.getFullYear()-lastOrder.getFullYear())*12 + (now.getMonth()-lastOrder.getMonth());
       return { client, totalQty, totalM2client, totalCost, avgMonthlyRevenue, avgMonthlyQty, avgMonthlyM2, monthsActive, monthsSinceLast };
     }).filter(Boolean).sort((a,b) => b!.totalM2client - a!.totalM2client) as any[];
-  }, [allClients, filteredConsumosForView]);
+  }, [allClients, consumosByClientId, view]);
 
   // ── CLIENT PROJECTION: 12-month forecast per client ──────────────────────
   const clientProjection = useMemo(() => {
+    if (view !== 'intelligence') return [];
     const now = new Date();
     const SIZES = globalFilmFilter === 'DIML' ? ['8x10', '10x14'] : ['8x10', '10x12', '10x14', '14x17'];
 
     return allClients.map(client => {
-      const consumos = filteredConsumosForView.filter(r => r.client_id === client.id);
+      const consumos = consumosByClientId.get(client.id) || [];
       if (consumos.length < 2) return null;
 
       const sorted = [...consumos].sort((a, b) => new Date(a.order_date).getTime() - new Date(b.order_date).getTime());
@@ -5556,7 +5579,6 @@ ${rows.map(r=>{
       const monthlyAvg = totalQty / monthsActive;
       if (monthlyAvg < 0.3) return null;
 
-      // Seasonality index per month (relative to own average)
       const monthlyTotals = Array(12).fill(0);
       consumos.forEach(r => { monthlyTotals[new Date(r.order_date).getMonth()] += effectiveQty(r); });
       const yearsActive = Math.max(1, Math.ceil(monthsActive / 12));
@@ -5565,14 +5587,12 @@ ${rows.map(r=>{
         return avg > 0 ? (v / yearsActive) / avg : 1;
       });
 
-      // Size breakdown
       const sizeAvg: Record<string, number> = {};
       SIZES.forEach(s => {
         const sq = consumos.filter(r => r.size === s).reduce((sum, r) => sum + r.quantity, 0);
         sizeAvg[s] = parseFloat((sq / monthsActive).toFixed(1));
       });
 
-      // 12-month projection applying seasonality
       const forecast = Array.from({ length: 12 }, (_, i) => {
         const monthIdx = (now.getMonth() + 1 + i) % 12;
         const label = new Date(now.getFullYear(), now.getMonth() + 1 + i, 1)
@@ -5596,7 +5616,7 @@ ${rows.map(r=>{
         annualRevenue: Math.round(annualTotal * avgCost),
       };
     }).filter(Boolean).sort((a, b) => (b as any).annualTotal - (a as any).annualTotal) as any[];
-  }, [allClients, filteredConsumosForView]);
+  }, [allClients, consumosByClientId, globalFilmFilter, view]);
 
   const printerMetrics = useMemo(() => {
     let totalPrinters = 0;
@@ -6443,7 +6463,7 @@ ${rows.map(r=>{
                       <span className="flex items-center gap-1"><User className="w-2.5 h-2.5"/> {client.client_code || 'N/A'}</span>
                     </div>
                     {(() => {
-                      const clientConsumos = activeCategoryConsumos.filter(r => r.client_id === client.id);
+                      const clientConsumos = activeConsumosByClientId.get(client.id) || [];
                       if (!clientConsumos.length) return null;
                       const totalM2 = clientConsumos.reduce((s, r) => s + getTotalM2(effectiveQty(r), r.size, r.film_type), 0);
                       const totalRev = clientConsumos.reduce((s, r) => s + (effectiveQty(r) * ((r.sale_price !== null && r.sale_price !== undefined) ? r.sale_price : (r.unit_cost || 0))), 0);
