@@ -1125,6 +1125,7 @@ function PurchasesDashboardView({ darkMode, globalMetrics, allConsumos, activeCa
   stockEntries?: any[];
 }) {
   if (activeCategory && activeCategory !== 'PELICULAS' && activeCategory !== 'ALL') {
+    const effectiveQty = (r: any) => (r.is_return ? -r.quantity : r.quantity);
     const productMap: Record<string, { qty: number; costoTotal: number; ventaTotal: number; code?: string }> = {};
 
     allConsumos.forEach((r: any) => {
