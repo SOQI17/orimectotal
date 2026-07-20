@@ -3318,23 +3318,18 @@ function App() {
             if (altN) clientsByName.set(altN, c);
           });
 
-          const consumosByInvoiceKey = new Map<string, ConsumptionRecord>();
-          const consumosByClientKey = new Map<string, ConsumptionRecord>();
+          const consumosByInvoice = new Map<string, ConsumptionRecord[]>();
+          const consumosByClient = new Map<number, ConsumptionRecord[]>();
 
           allConsumos.forEach(r => {
             if (r.invoice_number) {
-              const invKeyExact = `${normInvoice(r.invoice_number)}|${r.size}|${Math.abs(r.quantity)}`;
-              const invKeyNoSize = `${normInvoice(r.invoice_number)}|${Math.abs(r.quantity)}`;
-              const invKeyInvoiceOnly = `${normInvoice(r.invoice_number)}`;
-              if (!consumosByInvoiceKey.has(invKeyExact)) consumosByInvoiceKey.set(invKeyExact, r);
-              if (!consumosByInvoiceKey.has(invKeyNoSize)) consumosByInvoiceKey.set(invKeyNoSize, r);
-              if (!consumosByInvoiceKey.has(invKeyInvoiceOnly)) consumosByInvoiceKey.set(invKeyInvoiceOnly, r);
+              const invKey = normInvoice(r.invoice_number);
+              if (!consumosByInvoice.has(invKey)) consumosByInvoice.set(invKey, []);
+              consumosByInvoice.get(invKey)!.push(r);
             }
             if (r.client_id > 0) {
-              const clientKeyExact = `${r.client_id}|${r.order_date}|${r.size}|${Math.abs(r.quantity)}`;
-              const clientKeyNoSize = `${r.client_id}|${r.order_date}|${Math.abs(r.quantity)}`;
-              if (!consumosByClientKey.has(clientKeyExact)) consumosByClientKey.set(clientKeyExact, r);
-              if (!consumosByClientKey.has(clientKeyNoSize)) consumosByClientKey.set(clientKeyNoSize, r);
+              if (!consumosByClient.has(r.client_id)) consumosByClient.set(r.client_id, []);
+              consumosByClient.get(r.client_id)!.push(r);
             }
           });
 
@@ -3385,22 +3380,38 @@ function App() {
             return null;
           };
 
+          const usedExistingRecordIds = new Set<number>();
           const getExistingRecordFast = (tempRec: any, clientId: number): ConsumptionRecord | undefined => {
-            if (tempRec.invoice_number) {
-              const invKeyExact = `${normInvoice(tempRec.invoice_number)}|${tempRec.size}|${Math.abs(tempRec.quantity)}`;
-              const invKeyNoSize = `${normInvoice(tempRec.invoice_number)}|${Math.abs(tempRec.quantity)}`;
-              const invKeyInvoiceOnly = `${normInvoice(tempRec.invoice_number)}`;
-              const found = consumosByInvoiceKey.get(invKeyExact) || consumosByInvoiceKey.get(invKeyNoSize) || consumosByInvoiceKey.get(invKeyInvoiceOnly);
-              if (found) return found;
+            const normInv = tempRec.invoice_number ? normInvoice(tempRec.invoice_number) : '';
+            if (normInv && consumosByInvoice.has(normInv)) {
+              const candidates = consumosByInvoice.get(normInv)!;
+              let match = candidates.find(r => 
+                !usedExistingRecordIds.has(r.id) &&
+                ((tempRec.product_code && r.product_code === tempRec.product_code) ||
+                 (tempRec.product_name && r.product_name === tempRec.product_name) ||
+                 (tempRec.size && r.size === tempRec.size))
+              );
+              if (!match) {
+                match = candidates.find(r => !usedExistingRecordIds.has(r.id) && Math.abs(r.quantity) === Math.abs(tempRec.quantity));
+              }
+              if (!match) {
+                match = candidates.find(r => !usedExistingRecordIds.has(r.id));
+              }
+              if (match) {
+                usedExistingRecordIds.add(match.id);
+                return match;
+              }
             }
-            if (clientId > 0) {
-              const clientKeyExact = `${clientId}|${tempRec.order_date}|${tempRec.size}|${Math.abs(tempRec.quantity)}`;
-              const clientKeyNoSize = `${clientId}|${tempRec.order_date}|${Math.abs(tempRec.quantity)}`;
-              const found = consumosByClientKey.get(clientKeyExact) || consumosByClientKey.get(clientKeyNoSize);
-              if (found) {
-                if (!found.invoice_number || !tempRec.invoice_number || normInvoice(found.invoice_number) === normInvoice(tempRec.invoice_number)) {
-                  return found;
-                }
+            if (clientId > 0 && consumosByClient.has(clientId)) {
+              const candidates = consumosByClient.get(clientId)!;
+              const match = candidates.find(r => 
+                !usedExistingRecordIds.has(r.id) &&
+                r.order_date === tempRec.order_date &&
+                Math.abs(r.quantity) === Math.abs(tempRec.quantity)
+              );
+              if (match) {
+                usedExistingRecordIds.add(match.id);
+                return match;
               }
             }
             return undefined;
@@ -3424,6 +3435,8 @@ function App() {
               const existingRec = getExistingRecordFast(tempRecord, client.id);
               if (existingRec) {
                 const hasDiff = 
+                  (tempRecord.product_code !== undefined && tempRecord.product_code !== existingRec.product_code) ||
+                  (tempRecord.product_name !== undefined && tempRecord.product_name !== existingRec.product_name) ||
                   (tempRecord.unit_cost !== undefined && tempRecord.unit_cost !== existingRec.unit_cost) ||
                   (tempRecord.batch_number !== '' && tempRecord.batch_number !== existingRec.batch_number) ||
                   (tempRecord.expiry_date !== '2099-12-31' && tempRecord.expiry_date !== existingRec.expiry_date) ||
@@ -3466,6 +3479,8 @@ function App() {
             const existingRec2 = getExistingRecordFast(tempRecord2, client.id);
             if (existingRec2) {
               const hasDiff2 = 
+                (tempRecord2.product_code !== undefined && tempRecord2.product_code !== existingRec2.product_code) ||
+                (tempRecord2.product_name !== undefined && tempRecord2.product_name !== existingRec2.product_name) ||
                 (tempRecord2.unit_cost !== undefined && tempRecord2.unit_cost !== existingRec2.unit_cost) ||
                 (tempRecord2.batch_number !== '' && tempRecord2.batch_number !== existingRec2.batch_number) ||
                 (tempRecord2.expiry_date !== '2099-12-31' && tempRecord2.expiry_date !== existingRec2.expiry_date) ||
