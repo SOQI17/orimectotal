@@ -7111,10 +7111,10 @@ ${rows.map(r=>{
                       "px-6 py-4 border-b flex justify-between items-center transition-colors duration-300",
                       darkMode ? "bg-white/3 border-white/8" : "bg-gray-50/80 border-gray-100"
                     )}>
-                      {/* DI-HT / DI-HL tab switcher */}
+                      {/* DI-HT / DI-HL tab switcher — only for PELÍCULAS */}
                       <div className="flex items-center gap-1">
                         <History className={cn("w-3.5 h-3.5 mr-1", darkMode ? "text-gray-500" : "text-gray-400")} />
-                        {[
+                        {activeCategory === 'PELICULAS' ? [
                           { value: 'Todos', label: 'DI-HT + DI-HL' },
                           { value: 'DIHT', label: 'DI-HT' },
                           { value: 'DIHL', label: 'DI-HL' },
@@ -7135,19 +7135,23 @@ ${rows.map(r=>{
                           >
                             {tab.label}
                           </button>
-                        ))}
+                        )) : (
+                          <span className={cn("text-[10px] font-bold uppercase tracking-wider", darkMode ? "text-gray-500" : "text-gray-400")}>Historial de registros</span>
+                        )}
                       </div>
-                      {/* Size filter */}
-                      <div className={cn("flex items-center gap-0.5 p-0.5 rounded-lg", darkMode ? "bg-white/5" : "bg-gray-100")}>
-                        {['Todas','8x10','10x12','11x14','14x17'].map(size => (
-                          <button key={size} onClick={() => setClientSizeFilter(size)}
-                            className={cn("px-2.5 py-1 rounded-md text-[9px] font-black transition-all",
-                              clientSizeFilter === size
-                                ? (darkMode ? "bg-white/15 text-white" : "bg-white text-gray-800 shadow-sm")
-                                : (darkMode ? "text-gray-600 hover:text-gray-400" : "text-gray-400 hover:text-gray-600")
-                            )}>{size}</button>
-                        ))}
-                      </div>
+                      {/* Size filter — only for PELÍCULAS */}
+                      {activeCategory === 'PELICULAS' && (
+                        <div className={cn("flex items-center gap-0.5 p-0.5 rounded-lg", darkMode ? "bg-white/5" : "bg-gray-100")}>
+                          {['Todas','8x10','10x12','11x14','14x17'].map(size => (
+                            <button key={size} onClick={() => setClientSizeFilter(size)}
+                              className={cn("px-2.5 py-1 rounded-md text-[9px] font-black transition-all",
+                                clientSizeFilter === size
+                                  ? (darkMode ? "bg-white/15 text-white" : "bg-white text-gray-800 shadow-sm")
+                                  : (darkMode ? "text-gray-600 hover:text-gray-400" : "text-gray-400 hover:text-gray-600")
+                              )}>{size}</button>
+                          ))}
+                        </div>
+                      )}
                       <div className="flex items-center gap-3">
                         <div className="relative">
                           <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -7183,10 +7187,10 @@ ${rows.map(r=>{
                           <tr>
                             <th className="px-6 py-3 whitespace-nowrap">Fecha Pedido</th>
                             <th className="px-6 py-3 whitespace-nowrap">Factura</th>
-                            <th className="px-6 py-3 whitespace-nowrap">Medida</th>
-                            <th className="px-6 py-3 whitespace-nowrap">Tipo</th>
-                            <th className="px-6 py-3 text-center whitespace-nowrap">Cajas</th>
-                            <th className="px-6 py-3 text-center whitespace-nowrap">m²</th>
+                            <th className="px-6 py-3 whitespace-nowrap">{activeCategory === 'PELICULAS' ? 'Medida' : 'Descripción'}</th>
+                            <th className="px-6 py-3 whitespace-nowrap">{activeCategory === 'PELICULAS' ? 'Tipo' : 'Línea'}</th>
+                            <th className="px-6 py-3 text-center whitespace-nowrap">Cantidad</th>
+                            {activeCategory === 'PELICULAS' && <th className="px-6 py-3 text-center whitespace-nowrap">m²</th>}
                             <th className="px-6 py-3 text-right whitespace-nowrap">Costo Unit.</th>
                             <th className="px-6 py-3 text-right whitespace-nowrap">Precio Venta</th>
                             <th className="px-6 py-3 text-right whitespace-nowrap">Total Venta</th>
@@ -7216,27 +7220,38 @@ ${rows.map(r=>{
                               <td className="px-6 py-3.5 font-medium text-xs whitespace-nowrap">{formattedDate}</td>
                               <td className={cn("px-6 py-3.5 text-xs whitespace-nowrap font-mono", darkMode ? "text-gray-500" : "text-gray-400")}>{record.invoice_number || '—'}</td>
                               <td className="px-6 py-3.5 whitespace-nowrap">
-                                <span className={cn(
-                                  "px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wide",
-                                  darkMode ? "bg-white/12 text-gray-200" : "bg-gray-800 text-white"
-                                )}>
-                                  {record.size}
-                                </span>
-                              </td>
-                              <td className="px-6 py-3.5 whitespace-nowrap">
-                                {record.film_type ? (
-                                  <span className={cn(
-                                    "px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wide",
-                                    record.film_type === 'DIHL'
-                                      ? (darkMode ? "bg-blue-500/20 text-blue-400" : "bg-blue-100 text-blue-700")
-                                      : record.film_type === 'DIML'
-                                      ? (darkMode ? "bg-purple-500/20 text-purple-400" : "bg-purple-100 text-purple-700")
-                                      : (darkMode ? "bg-[#ED1C24]/20 text-[#ED1C24]" : "bg-red-100 text-red-700")
-                                  )}>
-                                    {record.film_type}
+                                {activeCategory === 'PELICULAS' ? (
+                                  <span className={cn("px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wide", darkMode ? "bg-white/12 text-gray-200" : "bg-gray-800 text-white")}>
+                                    {record.size || '—'}
                                   </span>
                                 ) : (
-                                  <span className={cn("text-[9px]", darkMode ? "text-gray-700" : "text-gray-300")}>—</span>
+                                  <span className={cn("text-xs font-medium", darkMode ? "text-gray-300" : "text-gray-700")}>
+                                    {record.size || '—'}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-6 py-3.5 whitespace-nowrap">
+                                {activeCategory === 'PELICULAS' ? (
+                                  record.film_type ? (
+                                    <span className={cn("px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wide",
+                                      record.film_type === 'DIHL' ? (darkMode ? "bg-blue-500/20 text-blue-400" : "bg-blue-100 text-blue-700")
+                                      : record.film_type === 'DIML' ? (darkMode ? "bg-purple-500/20 text-purple-400" : "bg-purple-100 text-purple-700")
+                                      : (darkMode ? "bg-[#ED1C24]/20 text-[#ED1C24]" : "bg-red-100 text-red-700")
+                                    )}>{record.film_type}</span>
+                                  ) : <span className={cn("text-[9px]", darkMode ? "text-gray-700" : "text-gray-300")}>—</span>
+                                ) : (
+                                  <span className={cn("px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wide",
+                                    (record as any).categoria === 'ACCESORIOS'    ? (darkMode ? "bg-orange-500/20 text-orange-400" : "bg-orange-100 text-orange-700") :
+                                    (record as any).categoria === 'EQUIPOS'       ? (darkMode ? "bg-blue-500/20 text-blue-400" : "bg-blue-100 text-blue-700") :
+                                    (record as any).categoria === 'QUIMICOS'      ? (darkMode ? "bg-yellow-500/20 text-yellow-400" : "bg-yellow-100 text-yellow-700") :
+                                    (record as any).categoria === 'REPUESTOS'     ? (darkMode ? "bg-purple-500/20 text-purple-400" : "bg-purple-100 text-purple-700") :
+                                    (record as any).categoria === 'SERVICIOS'     ? (darkMode ? "bg-cyan-500/20 text-cyan-400" : "bg-cyan-100 text-cyan-700") :
+                                    (record as any).categoria === 'MANTENIMIENTO' ? (darkMode ? "bg-teal-500/20 text-teal-400" : "bg-teal-100 text-teal-700") :
+                                    (record as any).categoria === 'CONTRASTES'    ? (darkMode ? "bg-pink-500/20 text-pink-400" : "bg-pink-100 text-pink-700") :
+                                    (record as any).categoria === 'ALIANZA'       ? (darkMode ? "bg-indigo-500/20 text-indigo-400" : "bg-indigo-100 text-indigo-700") :
+                                    (record as any).categoria === 'MAMOTOME'      ? (darkMode ? "bg-rose-500/20 text-rose-400" : "bg-rose-100 text-rose-700") :
+                                                                                    (darkMode ? "bg-gray-500/20 text-gray-400" : "bg-gray-100 text-gray-600")
+                                  )}>{(record as any).categoria || '—'}</span>
                                 )}
                               </td>
                               <td className="px-6 py-3.5 text-center whitespace-nowrap">
@@ -7244,15 +7259,17 @@ ${rows.map(r=>{
                                   {record.is_return ? `-${record.quantity}` : record.quantity}
                                 </span>
                               </td>
-                              <td className="px-6 py-3.5 text-center whitespace-nowrap">
-                                {getM2PerBox(record.size, record.film_type) > 0 ? (
-                                  <span className={cn("text-xs font-semibold", darkMode ? "text-cyan-400" : "text-cyan-600")}>
-                                    {getTotalM2(record.quantity, record.size, record.film_type).toFixed(2)}
-                                  </span>
-                                ) : (
-                                  <span className={cn("text-[10px]", darkMode ? "text-gray-700" : "text-gray-300")}>—</span>
-                                )}
-                              </td>
+                              {activeCategory === 'PELICULAS' && (
+                                <td className="px-6 py-3.5 text-center whitespace-nowrap">
+                                  {getM2PerBox(record.size, record.film_type) > 0 ? (
+                                    <span className={cn("text-xs font-semibold", darkMode ? "text-cyan-400" : "text-cyan-600")}>
+                                      {getTotalM2(record.quantity, record.size, record.film_type).toFixed(2)}
+                                    </span>
+                                  ) : (
+                                    <span className={cn("text-[10px]", darkMode ? "text-gray-700" : "text-gray-300")}>—</span>
+                                  )}
+                                </td>
+                              )}
                               <td className={cn("px-6 py-3.5 text-right font-mono text-xs whitespace-nowrap", record.is_return ? "text-amber-400" : (darkMode ? "text-gray-500" : "text-gray-400"))}>
                                 {record.unit_cost ? `${record.is_return ? '-' : ''}$${Math.abs(record.unit_cost).toFixed(2)}` : '—'}
                               </td>
