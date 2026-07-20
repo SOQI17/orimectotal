@@ -11097,7 +11097,12 @@ ${rows.map(r=>{
                       }, 0).toFixed(0)}
                     </p>
                     <p className={cn("text-[9px] font-bold uppercase tracking-wider mt-0.5", darkMode ? "text-gray-500" : "text-gray-400")}>m² proyectados 12 meses</p>
-                    <p className={cn("text-[10px] mt-0.5", darkMode ? "text-gray-600" : "text-gray-400")}>{clientProjection.reduce((s: number, c: any) => s + c.annualTotal, 0).toLocaleString()} cajas</p>
+                    <p className={cn("text-[10px] mt-0.5", darkMode ? "text-gray-600" : "text-gray-400")}>
+                      {activeCategory === 'PELICULAS'
+                        ? `${clientProjection.reduce((s: number, c: any) => s + c.annualTotal, 0).toLocaleString()} cajas`
+                        : `${clientProjection.reduce((s: number, c: any) => s + c.annualTotal, 0).toLocaleString()} unidades`
+                      }
+                    </p>
                   </div>
                   <div className="text-center px-5 border-r border-white/8">
                     <p className="text-3xl font-black text-emerald-400">${clientProjection.reduce((s: number, c: any) => s + c.annualRevenue, 0).toLocaleString('es-EC')}</p>
@@ -11106,8 +11111,8 @@ ${rows.map(r=>{
 
                 </div>
 
-                {/* ── PURCHASE RECOMMENDATION — powered by Fujifilm Planning Film ── */}
-                {(() => {
+                {/* ── PURCHASE RECOMMENDATION — powered by Fujifilm Planning Film (PELICULAS ONLY) ── */}
+                {activeCategory === 'PELICULAS' && (() => {
                   const FILM_TYPES = (globalFilmFilter === 'DIHL' ? ['DIHL'] : globalFilmFilter === 'DIHT' ? ['DIHT'] : globalFilmFilter === 'DIML' ? ['DIML'] : ['DIHT', 'DIHL']) as ('DIHT' | 'DIHL' | 'DIML')[];
 
                   const periodLabel = { 1: 'Mensual', 3: 'Trimestral', 6: 'Semestral', 12: 'Anual' }[projectionPeriod];
@@ -11620,12 +11625,12 @@ ${rows.map(r=>{
                       <thead className={cn("text-[9px] font-bold uppercase tracking-wider sticky top-0", darkMode ? "text-gray-600 bg-[#16161A]" : "text-gray-400 bg-white")}>
                         <tr>
                           <th className="px-5 py-2.5 sticky left-0 z-10" style={{ background: 'inherit' }}>Cliente</th>
-                          <th className="px-4 py-2.5 text-center whitespace-nowrap">m²/mes</th>
+                          <th className="px-4 py-2.5 text-center whitespace-nowrap">{activeCategory === 'PELICULAS' ? 'm²/mes' : 'Unid/mes'}</th>
                           {Array.from({ length: 12 }, (_, i) => {
                             const d = new Date(new Date().getFullYear(), new Date().getMonth() + 1 + i, 1);
                             return <th key={i} className="px-3 py-2.5 text-center whitespace-nowrap">{d.toLocaleDateString('es-EC', { month: 'short' })}</th>;
                           })}
-                          <th className="px-4 py-2.5 text-center whitespace-nowrap">m² anual</th>
+                          <th className="px-4 py-2.5 text-center whitespace-nowrap">{activeCategory === 'PELICULAS' ? 'm² anual' : 'Unid. Anual'}</th>
                           <th className="px-5 py-2.5 text-right whitespace-nowrap">Ingreso Est.</th>
                         </tr>
                       </thead>
@@ -11640,16 +11645,22 @@ ${rows.map(r=>{
                             </td>
                             <td className="px-4 py-3 text-center">
                               <span className={cn("font-black text-sm", darkMode ? "text-cyan-400" : "text-cyan-600")}>
-                                {(() => {
-                                  const SIZES = ['8x10','10x12','10x14','14x17'];
-                                  const sizeTotal = Object.values(item.sizeAvg as Record<string,number>).reduce((a:number,b:number)=>a+b,0);
-                                  return SIZES.reduce((s: number, size: string) => {
-                                    const share = sizeTotal > 0 ? (item.sizeAvg[size]||0)/sizeTotal : 0;
-                                    return s + getTotalM2(item.monthlyAvg * share, size, globalFilmFilter === 'DIHL' ? 'DIHL' : 'DIHT');
-                                  }, 0).toFixed(1);
-                                })()}
+                                {activeCategory === 'PELICULAS' ? (
+                                  (() => {
+                                    const SIZES = ['8x10','10x12','10x14','14x17'];
+                                    const sizeTotal = Object.values(item.sizeAvg as Record<string,number>).reduce((a:number,b:number)=>a+b,0);
+                                    return SIZES.reduce((s: number, size: string) => {
+                                      const share = sizeTotal > 0 ? (item.sizeAvg[size]||0)/sizeTotal : 0;
+                                      return s + getTotalM2(item.monthlyAvg * share, size, globalFilmFilter === 'DIHL' ? 'DIHL' : 'DIHT');
+                                    }, 0).toFixed(1);
+                                  })()
+                                ) : (
+                                  item.monthlyAvg.toFixed(1)
+                                )}
                               </span>
-                              <span className={cn("text-[9px] block", darkMode ? "text-gray-600" : "text-gray-400")}>{item.monthlyAvg} cj</span>
+                              <span className={cn("text-[9px] block", darkMode ? "text-gray-600" : "text-gray-400")}>
+                                {activeCategory === 'PELICULAS' ? `${item.monthlyAvg} cj` : 'unid/mes'}
+                              </span>
                             </td>
                             {item.forecast.map((m: any, mi: number) => (
                               <td key={mi} className="px-3 py-3 text-center">
@@ -11662,16 +11673,22 @@ ${rows.map(r=>{
                             ))}
                             <td className="px-4 py-3 text-center">
                               <span className={cn("font-black text-sm", darkMode ? "text-cyan-400" : "text-cyan-600")}>
-                                {(() => {
-                                  const SIZES = ['8x10','10x12','10x14','14x17'];
-                                  const sizeTotal = Object.values(item.sizeAvg as Record<string,number>).reduce((a:number,b:number)=>a+b,0);
-                                  return SIZES.reduce((s: number, size: string) => {
-                                    const share = sizeTotal > 0 ? (item.sizeAvg[size]||0)/sizeTotal : 0;
-                                    return s + getTotalM2(item.annualTotal * share, size, globalFilmFilter === 'DIHL' ? 'DIHL' : 'DIHT');
-                                  }, 0).toFixed(0);
-                                })()} m²
+                                {activeCategory === 'PELICULAS' ? (
+                                  (() => {
+                                    const SIZES = ['8x10','10x12','10x14','14x17'];
+                                    const sizeTotal = Object.values(item.sizeAvg as Record<string,number>).reduce((a:number,b:number)=>a+b,0);
+                                    return SIZES.reduce((s: number, size: string) => {
+                                      const share = sizeTotal > 0 ? (item.sizeAvg[size]||0)/sizeTotal : 0;
+                                      return s + getTotalM2(item.annualTotal * share, size, globalFilmFilter === 'DIHL' ? 'DIHL' : 'DIHT');
+                                    }, 0).toFixed(0) + ' m²';
+                                  })()
+                                ) : (
+                                  item.annualTotal + ' unid.'
+                                )}
                               </span>
-                              <span className={cn("text-[9px] block", darkMode ? "text-gray-600" : "text-gray-400")}>{item.annualTotal} cj</span>
+                              <span className={cn("text-[9px] block", darkMode ? "text-gray-600" : "text-gray-400")}>
+                                {activeCategory === 'PELICULAS' ? `${item.annualTotal} cj` : 'anual'}
+                              </span>
                             </td>
                             <td className="px-5 py-3 text-right font-bold text-emerald-400">
                               ${item.annualRevenue.toLocaleString('es-EC')}
