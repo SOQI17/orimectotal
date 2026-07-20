@@ -3828,10 +3828,16 @@ function App() {
       setCsvImportStatus('done');
       showToast(`Importación completa — ${toInsert.length + toUpdateFilmType.length} registros`, 'success');
       addAuditLog('import_csv', `Importó CSV — ${toInsert.length} registros nuevos, ${toUpdateFilmType.length} actualizados`);
-    } catch (err) {
+    } catch (err: any) {
       console.error('CSV import error:', err);
+      const isQuota = err?.code === 'resource-exhausted' || String(err).includes('Quota exceeded') || String(err).includes('resource-exhausted');
+      if (isQuota) {
+        setCsvImportError('⚠️ Límite de cuota diario de Firebase alcanzado (Plan Gratuito Spark: 20,000 escrituras por día). Los primeros 20,000 registros ya se guardaron con éxito en la base de datos. Para importar los registros restantes hoy mismo, puedes cambiar al plan Blaze (pago por uso: cuesta solo unos pocos centavos de dólar) en Firebase Console o esperar a que la cuota gratuita se reinicie mañana.');
+      } else {
+        setCsvImportError(`Error durante la importación: ${err?.message || String(err)}`);
+      }
       setCsvImportStatus('error');
-      showToast('Error al importar el archivo CSV', 'error');
+      showToast(isQuota ? 'Límite de cuota diario de Firebase alcanzado' : 'Error al importar el archivo CSV', 'error');
     }
   };
 
