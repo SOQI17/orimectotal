@@ -3531,6 +3531,8 @@ function App() {
       let nextClientId = allClients.reduce((max, c) => c.id > max ? c.id : max, 0) + 1;
       let processed = 0;
 
+      const yieldUI = () => new Promise(r => setTimeout(r, 10));
+
       // In DIHL-only mode: replace DIHT records + insert new ones, all as DIHL
       if (isDihlOnly) {
         // Step A: delete DIHT records that are being replaced, then insert as DIHL
@@ -3546,6 +3548,7 @@ function App() {
             batch.delete(doc(db, 'consumos', (_replaceId as number).toString()));
           });
           await batch.commit();
+          await yieldUI();
         }
 
         // Update film_type and other fields on existing records in batches
@@ -3564,20 +3567,28 @@ function App() {
             batch.update(doc(db, 'consumos', (_updateId as number).toString()), updateData);
           });
           await batch.commit();
+          await yieldUI();
         }
 
-        // Step B: create new clients if needed
+        // Step B: create new clients in batches
         const dihlNewClients = new Map<string, { canonicalName: string; province: string; clientCode: string; salesperson: string }>();
         toCreate.forEach(({ clientName, province, clientCode, salesperson }) => {
           const key = norm(clientCode) || norm(clientName);
           if (!dihlNewClients.has(key)) dihlNewClients.set(key, { canonicalName: clientName, province, clientCode, salesperson });
         });
         const dihlClientMap = new Map<string, number>();
-        for (const [, info] of dihlNewClients) {
-          const newClient: Client = { id: nextClientId, name: info.canonicalName, province: info.province, ruc_id: '', contact: '', client_code: info.clientCode, salesperson: info.salesperson.toUpperCase().trim(), printers: [] };
-          await setDoc(doc(db, 'clientes', nextClientId.toString()), newClient);
-          dihlClientMap.set(info.canonicalName, nextClientId);
-          nextClientId++;
+        const dihlNewClientsList = Array.from(dihlNewClients.values());
+        for (let i = 0; i < dihlNewClientsList.length; i += 400) {
+          const chunk = dihlNewClientsList.slice(i, i + 400);
+          const batch = writeBatch(db);
+          chunk.forEach(info => {
+            const newClient: Client = { id: nextClientId, name: info.canonicalName, province: info.province, ruc_id: '', contact: '', client_code: info.clientCode, salesperson: info.salesperson.toUpperCase().trim(), printers: [] };
+            batch.set(doc(db, 'clientes', nextClientId.toString()), newClient);
+            dihlClientMap.set(info.canonicalName, nextClientId);
+            nextClientId++;
+          });
+          await batch.commit();
+          await yieldUI();
         }
 
         // Step C: insert replaced + fresh + toCreate rows all as DIHL
@@ -3606,6 +3617,7 @@ function App() {
           await batch.commit();
           processed += chunk.length;
           setCsvImportProgress(Math.round((processed / totalOps) * 100));
+          await yieldUI();
         }
 
         setCsvImportSummary({ records: toReplace.length + toInsertFresh.length + toCreate.length, newClients: dihlNewClients.size });
@@ -3614,7 +3626,7 @@ function App() {
         return;
       }
 
-      // Step 0: For existing clients matched by name (not code), update their client_code if empty
+      // Step 0: For existing clients matched by name (not code), update their client_code in batches
       const codeUpdates = new Map<number, string>(); // clientId → clientCode from CSV
       matched.forEach(({ row, clientName }) => {
         const client = allClients.find(c => c.name === clientName);
@@ -3623,39 +3635,51 @@ function App() {
         const info = extractClientInfoFromRow(row);
         if (info.clientCode) codeUpdates.set(client.id, info.clientCode);
       });
-      for (const [clientId, clientCode] of codeUpdates) {
-        await updateDoc(doc(db, 'clientes', clientId.toString()), { client_code: clientCode });
+      const codeUpdatesList = Array.from(codeUpdates.entries());
+      for (let i = 0; i < codeUpdatesList.length; i += 400) {
+        const chunk = codeUpdatesList.slice(i, i + 400);
+        const batch = writeBatch(db);
+        chunk.forEach(([clientId, clientCode]) => {
+          batch.update(doc(db, 'clientes', clientId.toString()), { client_code: clientCode });
+        });
+        await batch.commit();
+        await yieldUI();
       }
 
-      // Step 1: Create new clients — deduplicate by clientCode (primary) then by canonical name
+      // Step 1: Create new clients in batches
       const createdClientMap = new Map<string, number>(); // canonicalName → new clientId
       const uniqueNewClients = new Map<string, { canonicalName: string; province: string; clientCode: string; salesperson: string }>();
       toCreate.forEach(({ clientName, province, clientCode, salesperson }) => {
-        // Use normCode as key when available — this is the definitive dedup key
         const key = norm(clientCode) || norm(clientName);
         if (!uniqueNewClients.has(key)) {
           uniqueNewClients.set(key, { canonicalName: clientName, province, clientCode, salesperson });
         }
       });
 
-      for (const [, info] of uniqueNewClients) {
-        const newClient: Client = {
-          id: nextClientId,
-          name: info.canonicalName,
-          province: info.province,
-          ruc_id: '',
-          contact: '',
-          client_code: info.clientCode,
-          salesperson: info.salesperson.toUpperCase().trim(),
-          printers: [],
-        };
-        await setDoc(doc(db, 'clientes', nextClientId.toString()), newClient);
-        createdClientMap.set(info.canonicalName, nextClientId);
-        nextClientId++;
+      const uniqueNewClientsList = Array.from(uniqueNewClients.values());
+      for (let i = 0; i < uniqueNewClientsList.length; i += 400) {
+        const chunk = uniqueNewClientsList.slice(i, i + 400);
+        const batch = writeBatch(db);
+        chunk.forEach(info => {
+          const newClient: Client = {
+            id: nextClientId,
+            name: info.canonicalName,
+            province: info.province,
+            ruc_id: '',
+            contact: '',
+            client_code: info.clientCode,
+            salesperson: info.salesperson.toUpperCase().trim(),
+            printers: [],
+          };
+          batch.set(doc(db, 'clientes', nextClientId.toString()), newClient);
+          createdClientMap.set(info.canonicalName, nextClientId);
+          nextClientId++;
+        });
+        await batch.commit();
+        await yieldUI();
       }
 
       // Step 2: Import all records (existing + new clients) in batches
-      // Split matched into new inserts vs film_type updates
       const toInsert: { row: any; clientId: number }[] = [];
       const toUpdateFilmType: { row: any; clientId: number; _updateId: number }[] = [];
 
@@ -3670,30 +3694,35 @@ function App() {
         if (clientId) toInsert.push({ row, clientId });
       });
 
-      // Update existing records with differences
-      for (const { row, clientId, _updateId } of toUpdateFilmType) {
-        const record = mapRowToRecord(row, clientId, 0);
-        const updateData: any = {};
-        if (record.unit_cost !== undefined) updateData.unit_cost = record.unit_cost;
-        if (record.batch_number !== undefined && record.batch_number !== '') updateData.batch_number = record.batch_number;
-        if (record.expiry_date !== undefined && record.expiry_date !== '2099-12-31') updateData.expiry_date = record.expiry_date;
-        if (record.film_type !== undefined && record.film_type !== '') updateData.film_type = record.film_type;
-        if (record.order_date !== undefined) updateData.order_date = record.order_date;
+      // Update existing records with differences in batches
+      for (let i = 0; i < toUpdateFilmType.length; i += 400) {
+        const chunk = toUpdateFilmType.slice(i, i + 400);
+        const batch = writeBatch(db);
+        chunk.forEach(({ row, clientId, _updateId }) => {
+          const record = mapRowToRecord(row, clientId, 0);
+          const updateData: any = {};
+          if (record.unit_cost !== undefined) updateData.unit_cost = record.unit_cost;
+          if (record.batch_number !== undefined && record.batch_number !== '') updateData.batch_number = record.batch_number;
+          if (record.expiry_date !== undefined && record.expiry_date !== '2099-12-31') updateData.expiry_date = record.expiry_date;
+          if (record.film_type !== undefined && record.film_type !== '') updateData.film_type = record.film_type;
+          if (record.order_date !== undefined) updateData.order_date = record.order_date;
 
-        if (Object.keys(updateData).length > 0) {
-          await updateDoc(doc(db, 'consumos', _updateId.toString()), updateData);
-        }
-        processed++;
+          if (Object.keys(updateData).length > 0) {
+            batch.update(doc(db, 'consumos', _updateId.toString()), updateData);
+          }
+        });
+        await batch.commit();
+        processed += chunk.length;
         setCsvImportProgress(Math.round((processed / totalOps) * 100));
+        await yieldUI();
       }
 
-      const batchSize = 400;
-      for (let i = 0; i < toInsert.length; i += batchSize) {
-        const chunk = toInsert.slice(i, i + batchSize);
+      // Insert new records in batches
+      for (let i = 0; i < toInsert.length; i += 400) {
+        const chunk = toInsert.slice(i, i + 400);
         const batch = writeBatch(db);
         chunk.forEach(({ row, clientId }) => {
           const record = mapRowToRecord(row, clientId, nextRecordId++);
-          // Firestore rechaza undefined — limpiar todos los campos
           const clean = Object.fromEntries(
             Object.entries(record).filter(([, v]) => v !== undefined)
           );
@@ -3702,6 +3731,7 @@ function App() {
         await batch.commit();
         processed += chunk.length;
         setCsvImportProgress(Math.round((processed / totalOps) * 100));
+        await yieldUI();
       }
 
       setCsvImportSummary({ records: toInsert.length + toUpdateFilmType.length, newClients: uniqueNewClients.size });
