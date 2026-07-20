@@ -417,13 +417,20 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           const userDocRef = doc(db, 'users', firebaseUser.uid);
           const snap = await getDoc(userDocRef);
+          const userEmail = (firebaseUser.email || '').toLowerCase();
+          const isAdminEmail = userEmail === 'suqisam@gmail.com';
+          const defaultRole: UserRole = isAdminEmail ? 'admin' : 'vendedor';
+
           if (snap.exists()) {
             const data = snap.data() as AppUser;
-            if (data.activo) { setAppUser(data); }
+            if (isAdminEmail && data.role !== 'admin') {
+              const updatedUser: AppUser = { ...data, role: 'admin' };
+              await setDoc(userDocRef, { ...updatedUser, perms: DEFAULT_PERMS['admin'] }, { merge: true });
+              setAppUser(updatedUser);
+            } else if (data.activo) { setAppUser(data); }
             else { await signOut(_auth); setAppUser(null); }
           } else {
             // Check if user exists by email in users collection
-            const userEmail = (firebaseUser.email || '').toLowerCase();
             if (userEmail) {
               const q = query(collection(db, 'users'), where('email', '==', userEmail));
               const emailSnap = await getDocs(q);
@@ -431,8 +438,15 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
                 const existingDoc = emailSnap.docs[0];
                 const existingData = existingDoc.data() as AppUser;
                 if (existingData.activo) {
-                  const updatedUser = { ...existingData, uid: firebaseUser.uid };
-                  await setDoc(userDocRef, updatedUser, { merge: true });
+                  const updatedUser: AppUser = {
+                    ...existingData,
+                    uid: firebaseUser.uid,
+                    role: isAdminEmail ? 'admin' : existingData.role
+                  };
+                  await setDoc(userDocRef, {
+                    ...updatedUser,
+                    perms: isAdminEmail ? DEFAULT_PERMS['admin'] : ((existingDoc.data() as any).perms || DEFAULT_PERMS[updatedUser.role])
+                  }, { merge: true });
                   if (existingDoc.id !== firebaseUser.uid) {
                     await deleteDoc(doc(db, 'users', existingDoc.id));
                   }
@@ -448,15 +462,15 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
               }
             }
 
-            // Auto-provision new user from Google Login
+            // Auto-provision new user (suqisam@gmail.com gets admin role)
             const newUser: AppUser = {
               uid: firebaseUser.uid,
-              email: (firebaseUser.email || '').toLowerCase(),
-              nombre: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Usuario Google',
-              role: 'vendedor',
+              email: userEmail,
+              nombre: firebaseUser.displayName || userEmail.split('@')[0] || 'Administrador',
+              role: defaultRole,
               activo: true
             };
-            const defaultPerms = { ...DEFAULT_PERMS['vendedor'] };
+            const defaultPerms = { ...DEFAULT_PERMS[defaultRole] };
             await setDoc(userDocRef, { ...newUser, perms: defaultPerms });
             setAppUser(newUser);
           }
