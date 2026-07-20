@@ -3316,27 +3316,45 @@ function App() {
   const [purgeYear, setPurgeYear] = useState<string>('2026');
 
   const handlePurgeYearData = async () => {
-    const recordsToDelete = allConsumos.filter(r => r.order_date && r.order_date.startsWith(purgeYear));
+    const isAll = purgeYear === 'ALL';
+    const recordsToDelete = isAll 
+      ? allConsumos 
+      : allConsumos.filter(r => r.order_date && r.order_date.startsWith(purgeYear));
     
     if (recordsToDelete.length === 0) {
-      showToast(`No se encontraron registros del año ${purgeYear} para eliminar.`, "info");
+      showToast(isAll ? "No hay registros cargados en el sistema." : `No se encontraron registros del año ${purgeYear} para eliminar.`, "info");
       return;
     }
 
-    if (!window.confirm(`⚠️ ATENCIÓN: ¿Está seguro de eliminar TODOS los registros de consumo del año ${purgeYear}? Se detectaron ${recordsToDelete.length} registros. Esta acción es irreversible.`)) {
+    const confirmMsg1 = isAll
+      ? `🚨 ADVERTENCIA CRÍTICA: ¿Está completamente seguro de eliminar ABSOLUTAMENTE TODOS LOS REGISTROS (${recordsToDelete.length} consumos) del sistema? Esta acción vaciará la base de datos.`
+      : `⚠️ ATENCIÓN: ¿Está seguro de eliminar TODOS los registros de consumo del año ${purgeYear}? Se detectaron ${recordsToDelete.length} registros. Esta acción es irreversible.`;
+
+    if (!window.confirm(confirmMsg1)) {
       return;
     }
     
-    if (!window.confirm(`¿Confirmar eliminación definitiva? Todos los datos del ${purgeYear} se borrarán de la base de datos.`)) {
-      return;
+    const confirmMsg2 = isAll
+      ? `CONFIRMACIÓN FINAL: Escribe "DE ACUERDO" para borrar de forma definitiva todos los ${recordsToDelete.length} registros.`
+      : `¿Confirmar eliminación definitiva? Todos los datos del ${purgeYear} se borrarán de la base de datos.`;
+
+    if (isAll) {
+      const userInput = window.prompt(confirmMsg2);
+      if (userInput !== 'DE ACUERDO') {
+        showToast("Eliminación cancelada. Debes escribir DE ACUERDO para confirmar.", "info");
+        return;
+      }
+    } else {
+      if (!window.confirm(confirmMsg2)) return;
     }
 
     try {
       setCsvImportStatus('importing');
+      setCsvImportProgress(0);
       
       const totalToDelete = recordsToDelete.length;
       
-      // Delete in batches of 400
+      // Delete in batches of 400 with progress updates
       for (let i = 0; i < recordsToDelete.length; i += 400) {
         const chunk = recordsToDelete.slice(i, i + 400);
         const batch = writeBatch(db);
@@ -3344,10 +3362,13 @@ function App() {
           batch.delete(doc(db, 'consumos', record.id.toString()));
         });
         await batch.commit();
+        const percent = Math.min(100, Math.round(((i + chunk.length) / totalToDelete) * 100));
+        setCsvImportProgress(percent);
       }
 
-      addAuditLog('delete_record', `Eliminó todos los registros del año ${purgeYear} (${totalToDelete} consumos)`);
-      showToast(`Se eliminaron con éxito ${totalToDelete} registros del año ${purgeYear}.`, "success");
+      localStorage.removeItem('cached_consumos');
+      addAuditLog('delete_record', isAll ? `Eliminó TODOS los registros del sistema (${totalToDelete} consumos)` : `Eliminó todos los registros del año ${purgeYear} (${totalToDelete} consumos)`);
+      showToast(isAll ? `Se eliminaron con éxito los ${totalToDelete} registros del sistema.` : `Se eliminaron con éxito ${totalToDelete} registros del año ${purgeYear}.`, "success");
       setCsvImportStatus('idle');
     } catch (error: any) {
       console.error(`Error purging ${purgeYear} data:`, error);
@@ -13888,9 +13909,13 @@ ${rows.map(r=>{
                     <div className="flex gap-2.5 items-start">
                       <span className="text-base shrink-0">⚠️</span>
                       <div>
-                        <p className={cn("font-bold text-[11px] uppercase tracking-wider", darkMode ? "text-red-400" : "text-red-700")}>Limpiar datos por año</p>
+                        <p className={cn("font-bold text-[11px] uppercase tracking-wider", darkMode ? "text-red-400" : "text-red-700")}>
+                          {purgeYear === 'ALL' ? 'Limpiar TODA la base de datos' : 'Limpiar datos por año'}
+                        </p>
                         <p className={cn("text-[10px] mt-0.5", darkMode ? "text-gray-400" : "text-gray-600")}>
-                          ¿Quieres subir datos limpios? Elimina primero todos los consumos existentes del año seleccionado para evitar duplicados.
+                          {purgeYear === 'ALL' 
+                            ? '¿Quieres subir datos limpios desde cero? Elimina absolutamente TODOS los consumos cargados en el sistema.' 
+                            : '¿Quieres subir datos limpios? Elimina primero todos los consumos existentes del año seleccionado para evitar duplicados.'}
                         </p>
                       </div>
                     </div>
@@ -13905,20 +13930,26 @@ ${rows.map(r=>{
                             : "bg-white border border-gray-200 text-gray-800 focus:border-red-500/50"
                         )}
                       >
-                        <option value="2024">Año 2024</option>
-                        <option value="2025">Año 2025</option>
+                        <option value="ALL">⚠️ TODOS LOS AÑOS (TODOS LOS REGISTROS)</option>
                         <option value="2026">Año 2026</option>
+                        <option value="2025">Año 2025</option>
+                        <option value="2024">Año 2024</option>
                       </select>
                       <button
                         onClick={handlePurgeYearData}
+                        disabled={csvImportStatus === 'importing'}
                         className={cn(
-                          "px-3 py-1.5 rounded-lg font-black uppercase tracking-wider text-[9px] transition-all whitespace-nowrap shrink-0",
+                          "px-3 py-1.5 rounded-lg font-black uppercase tracking-wider text-[9px] transition-all whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50",
                           darkMode 
                             ? "bg-red-500/20 text-red-300 hover:bg-red-500/30 border border-red-500/30" 
                             : "bg-red-600 text-white hover:bg-red-500"
                         )}
                       >
-                        Borrar consumos {purgeYear}
+                        {csvImportStatus === 'importing' 
+                          ? `Eliminando (${csvImportProgress}%)...` 
+                          : purgeYear === 'ALL' 
+                            ? 'BORRAR TODOS LOS DATOS' 
+                            : `BORRAR CONSUMOS ${purgeYear}`}
                       </button>
                     </div>
                   </div>
