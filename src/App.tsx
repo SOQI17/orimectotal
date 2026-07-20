@@ -1941,8 +1941,18 @@ function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
-  const [allConsumos, setAllConsumos] = useState<ConsumptionRecord[]>([]);
-  const [allClients, setAllClients] = useState<Client[]>([]);
+  const [allConsumos, setAllConsumos] = useState<ConsumptionRecord[]>(() => {
+    try {
+      const cached = localStorage.getItem('cached_consumos');
+      return cached ? JSON.parse(cached) : [];
+    } catch { return []; }
+  });
+  const [allClients, setAllClients] = useState<Client[]>(() => {
+    try {
+      const cached = localStorage.getItem('cached_clients');
+      return cached ? JSON.parse(cached) : [];
+    } catch { return []; }
+  });
   const [activeCategory, setActiveCategory] = useState<string>('PELICULAS');
   const [otherDropdownOpen, setOtherDropdownOpen] = useState(false);
 
@@ -1953,7 +1963,10 @@ function App() {
 
   const [altNames, setAltNames] = useState<Record<number, string>>({});
   const [view, setView] = useState<'clients' | 'dashboard' | 'inventory' | 'intelligence' | 'imager' | 'usuarios'>('dashboard');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    const hasConsumos = localStorage.getItem('cached_consumos') !== null;
+    return !hasConsumos;
+  });
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('orimec_theme');
     return saved === 'dark';
@@ -2119,10 +2132,12 @@ function App() {
 
   // Sync with Firestore
   useEffect(() => {
+    const safetyTimer = setTimeout(() => {
+      setLoading(false);
+    }, 2500);
+
     const unsubClients = onSnapshot(collection(db, "clientes"), (snapshot) => {
       const docs = snapshot.docs.map(doc => doc.data() as Client);
-      // Only seed if there are NO clients at all AND we haven't seeded yet
-      // We use a local storage flag to remember if we've seeded
       const hasSeeded = localStorage.getItem('orimec_seeded') === 'true';
       
       if (snapshot.empty && fujifilmData.clientes.length > 0 && !hasSeeded) {
@@ -2137,16 +2152,16 @@ function App() {
         };
         seedClients();
       } else {
-        setAllClients(docs.sort((a, b) => a.name.localeCompare(b.name)));
+        const sorted = docs.sort((a, b) => a.name.localeCompare(b.name));
+        setAllClients(sorted);
+        try { localStorage.setItem('cached_clients', JSON.stringify(sorted)); } catch (e) {}
       }
     });
 
     const unsubConsumos = onSnapshot(collection(db, "consumos"), (snapshot) => {
       const docs = snapshot.docs.map(doc => doc.data() as ConsumptionRecord);
-      
       const hasSeededConsumos = localStorage.getItem('orimec_seeded_consumos') === 'true';
       
-      // Seed if empty
       if (snapshot.empty && fujifilmData.consumos.length > 0 && !hasSeededConsumos) {
         const seedData = async () => {
           const batch = writeBatch(db);
@@ -2160,6 +2175,7 @@ function App() {
         seedData();
       } else {
         setAllConsumos(docs);
+        try { localStorage.setItem('cached_consumos', JSON.stringify(docs)); } catch (e) {}
       }
       setLoading(false);
     });
@@ -6136,21 +6152,22 @@ ${rows.map(r=>{
           {/* Logo badge con pulse */}
           <div className="relative">
             <div className="relative z-10">
-              <OrimecLogo size={64} />
+              <OrimecLogo size={72} />
             </div>
             <div className="absolute -inset-3 rounded-2xl border-2 border-[#1A3A5C]/20 animate-ping" />
           </div>
-          {/* Wordmark completo */}
-          <div className="flex flex-col items-center gap-1.5">
-            <OrimecLogo size={56} />
-            <p className={cn("text-[10px] font-semibold uppercase tracking-[0.2em]", darkMode ? "text-gray-600" : "text-gray-400")}>
+          {/* Subtítulo y loader */}
+          <div className="flex flex-col items-center gap-2">
+            <p className={cn("text-[10px] font-bold uppercase tracking-[0.2em]", darkMode ? "text-gray-400" : "text-gray-500")}>
               Sistema de Gestión · Fujifilm
             </p>
+            <p className="text-[10px] text-gray-500 font-semibold animate-pulse">
+              Cargando datos del sistema...
+            </p>
           </div>
-          {/* Loading indicator */}
-          <div className="flex items-center gap-1.5 mt-2">
+          <div className="flex items-center gap-1.5 mt-1">
             {[0,1,2].map(i => (
-              <div key={i} className="w-1.5 h-1.5 rounded-full bg-[#1A3A5C]/40 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+              <div key={i} className="w-1.5 h-1.5 rounded-full bg-[#ED1C24] animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
             ))}
           </div>
         </div>
