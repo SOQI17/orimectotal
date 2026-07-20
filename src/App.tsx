@@ -2760,7 +2760,10 @@ function App() {
     }).filter(obj => Object.values(obj).some(v => String(v).trim() !== ''));
   };
 
-  const norm = (s: string) => (s || '').toUpperCase().trim().replace(/\s+/g, ' ');
+  // norm: uppercase + strip accents (á→A, é→E, ñ→N, etc.) + collapse spaces
+  // This ensures CSV headers like CATEGORÍA or CATEGORIA both match 'categoria'
+  const norm = (s: string) =>
+    (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim().replace(/\s+/g, ' ');
   // Returns negative quantity for returns so they subtract from totals automatically
   const effectiveQty = (r: ConsumptionRecord) => r.is_return ? -r.quantity : r.quantity;
 
@@ -3034,7 +3037,11 @@ function App() {
     };
 
     // Date parsing
-    const rawDate = get(['fecha pedido', 'fecha_pedido', 'order_date', 'fecha', 'date', 'fecha de pedido', 'fecha venta']);
+    // Build date from AÑO + MES columns if explicit FECHA is missing
+    const rawAnio = get(['año', 'anio', 'year', 'ano']);
+    const rawMes = get(['mes', 'month', 'mes numero']);
+    const rawDate = get(['fecha pedido', 'fecha_pedido', 'order_date', 'fecha', 'date', 'fecha de pedido', 'fecha venta'])
+      || (rawAnio && rawMes ? `${rawAnio}-${String(parseInt(rawMes)).padStart(2,'0')}-01` : '');
     let orderDate = rawDate;
     if (rawDate) {
       // DD/MM/YYYY
@@ -3071,14 +3078,14 @@ function App() {
     }
 
     // Quantity — negative = return
-    const qtyRaw = get(['cantidad', 'quantity', 'qty', 'cajas', 'boxes']);
+    const qtyRaw = get(['cantidad', 'quantity', 'qty', 'cajas', 'boxes', 'unidades']);
     const qtyParsed = (qtyRaw !== '' && !isNaN(parseInt(qtyRaw))) ? parseInt(qtyRaw) : 1;
     const isReturn = qtyParsed < 0;
     const qty = Math.abs(qtyParsed);
 
     // Cost parsing using the new parseNumber helper
-    const unitCostRaw = get(['costo', 'costo unitario', 'costo_unitario', 'unit_cost', 'c/u', 'precio unitario', 'valor unitario']);
-    const totalCostRaw = get(['costo total', 'costo_total', 'total']);
+    const unitCostRaw = get(['costo', 'costo unitario', 'costo_unitario', 'unit_cost', 'c/u', 'precio unitario', 'valor unitario', 'cu']);
+    const totalCostRaw = get(['costo total', 'costo_total', 'total costo']);
     
     const uCost = parseNumber(unitCostRaw);
     const tCost = parseNumber(totalCostRaw);
@@ -3091,8 +3098,8 @@ function App() {
     }
 
     // Sale Price parsing using the new parseNumber helper
-    const unitPriceRaw = get(['precio', 'price', 'precio unitario', 'precio venta', 'pvp', 'valor venta']);
-    const totalRevenueRaw = get(['vta total', 'venta total', 'venta_total', 'total venta', 'valor total venta', 'ingresos']);
+    const unitPriceRaw = get(['precios', 'precio', 'price', 'precio unitario', 'precio venta', 'pvp', 'valor venta', 'p.v.p', 'pvp unitario']);
+    const totalRevenueRaw = get(['vta total', 'venta total', 'venta_total', 'total venta', 'valor total venta', 'ingresos', 'vtatotal']);
 
     const uPrice = parseNumber(unitPriceRaw);
     const tRevenue = parseNumber(totalRevenueRaw);
@@ -3105,7 +3112,7 @@ function App() {
     }
 
     // Invoice: fix scientific notation
-    const rawInvoice = get(['factura', 'invoice', 'invoice_number', 'n° factura', 'numero factura', 'nro factura', 'nro. factura']);
+    const rawInvoice = get(['factura', 'invoice', 'invoice_number', 'n° factura', 'numero factura', 'nro factura', 'nro. factura', 'num factura', 'nfactura']);
 
     // Film type: extract DIHT, DIHL or TXE from articulo name or explicit column
     const articuloRaw = get(['articulo', 'producto', 'article', 'descripcion', 'description']);
@@ -3142,7 +3149,11 @@ function App() {
       return normVal || 'PELICULAS';
     };
 
-    const categoriaRaw = get(['categoria', 'category', 'linea', 'línea', 'tipo', 'segmento']);
+    const categoriaRaw = get([
+      'categoria', 'categoría', 'category',
+      'linea', 'línea', 'linea negocio', 'línea negocio', 'linea de negocio', 'línea de negocio',
+      'tipo', 'tipo producto', 'segmento', 'rubro', 'familia', 'grupo'
+    ]);
     const categoria = cleanCategoryName(categoriaRaw);
 
     return {
@@ -13506,16 +13517,20 @@ ${rows.map(r=>{
                       {[
                         ['Cliente / Nombre', 'Para identificar el centro médico'],
                         ['RUC / ID', 'Alternativa de identificación'],
-                        ['Fecha Pedido', 'Formato DD/MM/YYYY o YYYY-MM-DD'],
-                        ['Medida / Size', 'Ej: 14x17, 8x10, 10x12'],
-                        ['Cantidad / Qty', 'Número de cajas'],
+                        ['Categoría / Línea', 'Define la línea de negocio del registro'],
+                        ['Fecha / Año + Mes', 'Fecha del pedido o columnas Año y Mes'],
+                        ['Cantidad / Qty', 'Número de cajas o unidades'],
                         ['Factura / Invoice', 'Número de factura'],
+                        ['Medida / Size', 'Ej: 14x17, 8x10, 10x12'],
                         ['Lote / Batch', 'Número de lote'],
-                        ['Costo / Costo Unitario', 'Costo unitario por caja'],
+                        ['C/U / Costo', 'Costo unitario por caja'],
                         ['Costo Total', 'Costo acumulado de la fila'],
-                        ['Precio / PVP', 'Precio de venta unitario'],
+                        ['Precios / PVP', 'Precio de venta unitario'],
                         ['Vta Total / Venta Total', 'Ingresos totales de la fila'],
+                        ['Vendedor', 'Nombre del asesor/representante'],
+                        ['Provincia / Ciudad', 'Ubicación del cliente'],
                         ['Utilidad', 'Margen de ganancia acumulado'],
+                        ['Producto / Artículo', 'Nombre o código del producto'],
                       ].map(([col, desc]) => (
                         <div key={col} className="flex gap-1.5">
                           <span className={cn("font-semibold shrink-0", darkMode ? "text-gray-300" : "text-gray-700")}>{col}:</span>
