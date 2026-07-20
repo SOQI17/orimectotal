@@ -2151,154 +2151,28 @@ function App() {
   useEffect(() => {
     const safetyTimer = setTimeout(() => {
       setLoading(false);
-    }, 2500);
+    }, 200);
 
     const unsubClients = onSnapshot(collection(db, "clientes"), (snapshot) => {
       const docs = snapshot.docs.map(doc => doc.data() as Client);
-      const hasSeeded = localStorage.getItem('orimec_seeded') === 'true';
-      
-      if (snapshot.empty && fujifilmData.clientes.length > 0 && !hasSeeded) {
-        const seedClients = async () => {
-          const batch = writeBatch(db);
-          fujifilmData.clientes.forEach(client => {
-            const docRef = doc(db, "clientes", client.id.toString());
-            batch.set(docRef, client);
-          });
-          await batch.commit();
-          localStorage.setItem('orimec_seeded', 'true');
-        };
-        seedClients();
-      } else {
-        const sorted = docs.sort((a, b) => a.name.localeCompare(b.name));
-        setAllClients(sorted);
-        try { localStorage.setItem('cached_clients', JSON.stringify(sorted)); } catch (e) {}
-      }
+      const sorted = docs.sort((a, b) => a.name.localeCompare(b.name));
+      setAllClients(sorted);
+      try { localStorage.setItem('cached_clients', JSON.stringify(sorted)); } catch (e) {}
+      setLoading(false);
+    }, (err) => {
+      console.warn("Firestore clients error:", err);
+      setLoading(false);
     });
 
     const unsubConsumos = onSnapshot(collection(db, "consumos"), (snapshot) => {
       const docs = snapshot.docs.map(doc => doc.data() as ConsumptionRecord);
-      const hasSeededConsumos = localStorage.getItem('orimec_seeded_consumos') === 'true';
-      
-      if (snapshot.empty && fujifilmData.consumos.length > 0 && !hasSeededConsumos) {
-        const seedData = async () => {
-          const batch = writeBatch(db);
-          fujifilmData.consumos.forEach(record => {
-            const docRef = doc(db, "consumos", record.id.toString());
-            batch.set(docRef, record);
-          });
-          await batch.commit();
-          localStorage.setItem('orimec_seeded_consumos', 'true');
-        };
-        seedData();
-      } else {
-        setAllConsumos(docs);
-        try { localStorage.setItem('cached_consumos', JSON.stringify(docs)); } catch (e) {}
-      }
+      setAllConsumos(docs);
+      try { localStorage.setItem('cached_consumos', JSON.stringify(docs)); } catch (e) {}
+      setLoading(false);
+    }, (err) => {
+      console.warn("Firestore consumos error:", err);
       setLoading(false);
     });
-
-    // One-time CSV Update Utility
-    const runCsvUpdate = async () => {
-      if (localStorage.getItem('orimec_scanner_update_done') === 'true') return;
-      
-      const newConsumos = [
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "14x17", invoice_number: "001001000070734", order_date: "2025-06-19", batch_number: "72512", quantity: 1, unit_cost: 78.04 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "14x17", invoice_number: "001001000070891", order_date: "2025-07-15", batch_number: "72512", quantity: 6, unit_cost: 78.043769 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "14x17", invoice_number: "001001000071136", order_date: "2025-09-02", batch_number: "72513", quantity: 4, unit_cost: 77.98 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "8x10", invoice_number: "001001000070739", order_date: "2025-06-19", batch_number: "72620", quantity: 1, unit_cost: 25.92 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "8x10", invoice_number: "001001000070734", order_date: "2025-06-19", batch_number: "72620", quantity: 3, unit_cost: 25.92 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "8x10", invoice_number: "001001000070756", order_date: "2025-06-23", batch_number: "72620", quantity: 6, unit_cost: 25.92 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "8x10", invoice_number: "001001000070757", order_date: "2025-06-23", batch_number: "72620", quantity: 6, unit_cost: 25.92 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "8x10", invoice_number: "001001000070891", order_date: "2025-07-15", batch_number: "72620", quantity: 6, unit_cost: 25.921764 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "8x10", invoice_number: "001001000070963", order_date: "2025-07-30", batch_number: "72620", quantity: 1, unit_cost: 25.921764 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "8x10", invoice_number: "001001000070994", order_date: "2025-08-05", batch_number: "72908", quantity: 2, unit_cost: 25.80 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "8x10", invoice_number: "001001000070996", order_date: "2025-08-05", batch_number: "72908", quantity: 2, unit_cost: 25.80 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "8x10", invoice_number: "001001000071137", order_date: "2025-09-02", batch_number: "73439", quantity: 5, unit_cost: 38.52 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "8x10", invoice_number: "001001000071136", order_date: "2025-09-02", batch_number: "73439", quantity: 10, unit_cost: 38.52 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "8x10", invoice_number: "001001000071242", order_date: "2025-09-22", batch_number: "73439", quantity: 10, unit_cost: 36.90 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "8x10", invoice_number: "001001000071325", order_date: "2025-10-07", batch_number: "76439", quantity: 6, unit_cost: 36.90 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "8x10", invoice_number: "001001000071529", order_date: "2025-11-17", batch_number: "76439", quantity: 5, unit_cost: 30.12 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "10x14", invoice_number: "001001000071142", order_date: "2025-09-02", batch_number: "67221", quantity: 1, unit_cost: 113.74 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "10x14", invoice_number: "001001000071336", order_date: "2025-10-09", batch_number: "67221", quantity: 1, unit_cost: 113.74 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "10x14", invoice_number: "001001000071529", order_date: "2025-11-17", batch_number: "60356", quantity: 5, unit_cost: 115.54 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "10x14", invoice_number: "001001000071530", order_date: "2025-11-17", batch_number: "60356", quantity: 5, unit_cost: 115.54 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "14x17", invoice_number: "001001000071142", order_date: "2025-09-02", batch_number: "44941", quantity: 8, unit_cost: 121.93 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "14x17", invoice_number: "001001000071326", order_date: "2025-10-07", batch_number: "46331", quantity: 8, unit_cost: 121.93 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "14x17", invoice_number: "001001000071325", order_date: "2025-10-07", batch_number: "46143", quantity: 8, unit_cost: 121.93 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "14x17", invoice_number: "001001000071545", order_date: "2025-11-19", batch_number: "49547", quantity: 10, unit_cost: 123.70 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "14x17", invoice_number: "001001000071547", order_date: "2025-11-19", batch_number: "49547", quantity: 10, unit_cost: 123.70 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "10x12", invoice_number: "001001000070739", order_date: "2025-06-19", batch_number: "72523", quantity: 1, unit_cost: 38.89 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "10x12", invoice_number: "001001000070734", order_date: "2025-06-19", batch_number: "72523", quantity: 4, unit_cost: 38.89 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "10x12", invoice_number: "001001000070756", order_date: "2025-06-23", batch_number: "72522", quantity: 10, unit_cost: 38.89 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "10x12", invoice_number: "001001000070757", order_date: "2025-06-23", batch_number: "72522", quantity: 10, unit_cost: 38.89 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "10x12", invoice_number: "001001000070891", order_date: "2025-07-15", batch_number: "72523", quantity: 15, unit_cost: 38.884303 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "10x12", invoice_number: "001001000070892", order_date: "2025-07-15", batch_number: "72523", quantity: 15, unit_cost: 38.884303 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "10x12", invoice_number: "001001000070963", order_date: "2025-07-30", batch_number: "72523", quantity: 1, unit_cost: 38.884303 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "10x12", invoice_number: "001001000070994", order_date: "2025-08-05", batch_number: "72523", quantity: 15, unit_cost: 38.88 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "10x12", invoice_number: "001001000070996", order_date: "2025-08-05", batch_number: "72523", quantity: 5, unit_cost: 38.88 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "10x12", invoice_number: "001001000071137", order_date: "2025-09-02", batch_number: "72523", quantity: 15, unit_cost: 38.87 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "10x12", invoice_number: "001001000071136", order_date: "2025-09-02", batch_number: "72523", quantity: 15, unit_cost: 38.87 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "10x12", invoice_number: "001001000071324", order_date: "2025-10-07", batch_number: "72523", quantity: 20, unit_cost: 38.86 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "10x12", invoice_number: "001001000071325", order_date: "2025-10-07", batch_number: "72523", quantity: 20, unit_cost: 38.86 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "10x12", invoice_number: "001001000071529", order_date: "2025-11-17", batch_number: "73359", quantity: 20, unit_cost: 39.34 },
-        { clientName: "CORPORACION SCANNER CUENCA CORPSCANNER S.A.S.", size: "10x12", invoice_number: "001001000071530", order_date: "2025-11-17", batch_number: "73359", quantity: 20, unit_cost: 39.34 },
-      ];
-
-      if (allClients.length > 0 && allConsumos.length > 0) {
-        const batch = writeBatch(db);
-        let updates = 0;
-
-        // Get the highest existing consumption ID
-        let nextId = allConsumos.reduce((max, r) => r.id > max ? r.id : max, 0) + 1;
-
-        newConsumos.forEach(item => {
-          const client = allClients.find(c => c.name.toUpperCase() === item.clientName.toUpperCase());
-          if (client) {
-            // Check if this exact record already exists to prevent duplicates
-            const exists = allConsumos.some(r => 
-              r.client_id === client.id && 
-              r.invoice_number === item.invoice_number &&
-              r.size === item.size &&
-              r.quantity === item.quantity
-            );
-
-            if (!exists) {
-              const newRecord: ConsumptionRecord = {
-                id: nextId++,
-                client_id: client.id,
-                order_date: item.order_date,
-                invoice_number: item.invoice_number,
-                quantity: item.quantity,
-                size: item.size,
-                batch_number: item.batch_number,
-                expiry_date: "2026-12-31", // Default expiry
-                unit_cost: item.unit_cost
-              };
-              
-              const consumoRef = doc(db, "consumos", newRecord.id.toString());
-              batch.set(consumoRef, newRecord);
-              updates++;
-            }
-          }
-        });
-
-        if (updates > 0) {
-          try {
-            await batch.commit();
-            localStorage.setItem('orimec_scanner_update_done', 'true');
-            console.log(`Successfully added ${updates} new records for Corporacion Scanner.`);
-          } catch (err) {
-            console.error("Error committing batch update:", err);
-          }
-        } else {
-           localStorage.setItem('orimec_scanner_update_done', 'true');
-        }
-      }
-    };
-
-    if (!loading && allClients.length > 0 && allConsumos.length > 0) {
-      runCsvUpdate();
-    }
 
     const unsubAltNames = onSnapshot(collection(db, "altNames"), (snapshot) => {
       const names: Record<number, string> = {};
