@@ -6215,38 +6215,6 @@ ${rows.map(r=>{
             darkMode ? "bg-white/10" : "bg-gray-200"
           )} />
 
-          <nav className={cn(
-            "flex items-center gap-1 p-1 rounded-xl transition-colors duration-300",
-            darkMode ? "bg-white/5" : "bg-gray-100/80"
-          )}>
-            {[
-              { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin','financiero','vendedor','asistente','gerencia'] },
-              { id: 'clients', label: 'Clientes', icon: Users, roles: ['admin','financiero','vendedor','asistente','gerencia'] },
-              { id: 'intelligence', label: 'Inteligencia', icon: Brain, roles: ['admin','financiero','gerencia'] },
-              ...(role === 'admin' ? [{ id: 'usuarios', label: 'Usuarios', icon: Shield, roles: ['admin'] }] : []),
-            ].filter(t => t.roles.includes(role || '')).map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                onClick={() => setView(id as any)}
-                className={cn(
-                  "px-2.5 xl:px-3.5 py-1.5 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition-all",
-                  view === id
-                    ? (darkMode
-                        ? "bg-[#ED1C24] text-white shadow-sm shadow-red-500/20"
-                        : "bg-white text-[#ED1C24] shadow-sm border border-gray-200/80")
-                    : (darkMode
-                        ? "text-gray-500 hover:text-gray-300 hover:bg-white/5"
-                        : "text-gray-500 hover:text-gray-700 hover:bg-white/60")
-                )}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                {label}
-              </button>
-            ))}
-          </nav>
-
-          <div className={cn("h-6 w-px mx-0.5", darkMode ? "bg-white/10" : "bg-gray-200")} />
-
           {/* Global Category Selector */}
           <div className={cn("flex items-center gap-0.5 p-1 rounded-xl border transition-colors", darkMode ? "bg-white/5 border-white/10" : "bg-gray-100/80 border-gray-200/80")}>
             <span className={cn("text-[9px] font-black uppercase tracking-wider px-1.5 flex items-center gap-1", darkMode ? "text-gray-500" : "text-gray-400")}>
@@ -6509,7 +6477,44 @@ ${rows.map(r=>{
         </div>
       </header>
 
-      <main className="flex-1 grid grid-cols-12 gap-6 p-6 min-h-0">
+      <div className="flex-1 flex min-h-0 overflow-hidden">
+        {/* Banda / Sidebar Navegación Izquierda */}
+        <aside className={cn(
+          "w-48 xl:w-56 border-r flex flex-col justify-between py-5 px-3 shrink-0 transition-colors duration-300 z-10",
+          darkMode ? "bg-[#16161A] border-white/8 text-white" : "bg-white border-gray-200/80 shadow-sm text-gray-800"
+        )}>
+          <div className="flex flex-col gap-1">
+            <p className={cn("text-[9px] font-black uppercase tracking-[0.2em] px-3 py-1.5 mb-1", darkMode ? "text-gray-600" : "text-gray-400")}>
+              Navegación
+            </p>
+            {[
+              { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin','financiero','vendedor','asistente','gerencia'] },
+              { id: 'clients', label: 'Clientes', icon: Users, roles: ['admin','financiero','vendedor','asistente','gerencia'] },
+              { id: 'intelligence', label: 'Inteligencia', icon: Brain, roles: ['admin','financiero','gerencia'] },
+              ...(role === 'admin' ? [{ id: 'usuarios', label: 'Usuarios', icon: Shield, roles: ['admin'] }] : []),
+            ].filter(t => t.roles.includes(role || '')).map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => setView(id as any)}
+                className={cn(
+                  "w-full px-3.5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-3 transition-all cursor-pointer",
+                  view === id
+                    ? (darkMode
+                        ? "bg-[#ED1C24] text-white shadow-md shadow-red-500/20"
+                        : "bg-[#ED1C24] text-white shadow-md shadow-red-500/15")
+                    : (darkMode
+                        ? "text-gray-400 hover:text-white hover:bg-white/5"
+                        : "text-gray-600 hover:text-gray-900 hover:bg-gray-100/80")
+                )}
+              >
+                <Icon className="w-4 h-4 shrink-0" />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <main className="flex-1 grid grid-cols-12 gap-6 p-6 min-h-0 overflow-y-auto custom-scrollbar">
         {view === 'usuarios' && role === 'admin' && (
           <div className="col-span-12 h-full overflow-hidden">
             <UsersPanel darkMode={darkMode} />
@@ -11943,6 +11948,7 @@ ${rows.map(r=>{
         )}
 
       </main>
+      </div>
 
       {/* ── STOCK TIEMPO CELL DETAIL MODAL ── */}
       {stockTiempoModal && (
